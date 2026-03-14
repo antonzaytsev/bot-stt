@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "logger"
+require "json"
 require_relative "telegram_client"
 require_relative "update_handler"
 
@@ -38,6 +39,7 @@ module Bot
       while @running
         begin
           updates = @telegram.get_updates(offset: @offset, timeout: POLL_TIMEOUT)
+          @logger.info("Received #{updates.size} update(s)") if updates.any?
 
           updates.each do |update|
             @offset = update["update_id"] + 1
@@ -45,6 +47,7 @@ module Bot
           end
         rescue => e
           @logger.error("Polling error: #{e.class}: #{e.message}")
+          @logger.error(e.backtrace&.first(5)&.join("\n"))
           sleep 3 if @running
         end
       end
@@ -53,10 +56,20 @@ module Bot
     def process_update(update)
       msg = update["message"]
       chat = msg&.dig("chat")
-      @logger.info("Update: id=#{update["update_id"]} chat_id=#{chat&.dig("id")} type=#{chat&.dig("type")} title=#{chat&.dig("title") || "DM"}")
+      @logger.info("--- Update id=#{update["update_id"]} ---")
+      @logger.info("  chat_id=#{chat&.dig("id")} type=#{chat&.dig("type")} title=#{chat&.dig("title") || "DM"}")
+      @logger.info("  message keys: #{msg&.keys}")
+      @logger.info("  has voice: #{msg&.key?("voice")}")
+      @logger.info("  reply_to_message keys: #{msg&.dig("reply_to_message")&.keys || "nil"}")
+      @logger.info("  reply_to has voice: #{msg&.dig("reply_to_message")&.key?("voice") || "N/A"}")
+      @logger.info("  text: #{msg&.dig("text").inspect}")
+      @logger.info("  entities: #{msg&.dig("entities").inspect}")
+      @logger.info("  Raw JSON: #{JSON.generate(update)}")
+
       UpdateHandler.new(update).call
     rescue => e
       @logger.error("Failed to process update #{update["update_id"]}: #{e.class}: #{e.message}")
+      @logger.error(e.backtrace&.first(5)&.join("\n"))
     end
   end
 end

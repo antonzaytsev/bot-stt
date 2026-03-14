@@ -25,28 +25,38 @@ module Jobs
     end
 
     def perform(chat_id, message_id, file_id)
+      Sidekiq.logger.info("[job] START TranscribeJob: chat=#{chat_id} msg=#{message_id} file=#{file_id}")
       dedup_key = "transcribed:#{chat_id}:#{message_id}"
 
       if already_transcribed?(dedup_key)
-        Sidekiq.logger.info("Already transcribed: chat=#{chat_id} msg=#{message_id}, skipping")
+        Sidekiq.logger.info("[job] Already transcribed: chat=#{chat_id} msg=#{message_id}, skipping")
         return
       end
 
       telegram = Bot::TelegramClient.new
       whisper = Bot::WhisperClient.new
 
-      Sidekiq.logger.info("Transcribing: chat=#{chat_id} msg=#{message_id} file=#{file_id}")
-
+      Sidekiq.logger.info("[job] Getting file info for file_id=#{file_id}")
       file_info = telegram.get_file(file_id: file_id)
-      audio_data = telegram.download_file(file_path: file_info["file_path"])
+      Sidekiq.logger.info("[job] File info: path=#{file_info["file_path"]} size=#{file_info["file_size"]}")
 
+      Sidekiq.logger.info("[job] Downloading audio...")
+      audio_data = telegram.download_file(file_path: file_info["file_path"])
+      Sidekiq.logger.info("[job] Downloaded #{audio_data.bytesize} bytes")
+
+      Sidekiq.logger.info("[job] Sending to Whisper API...")
       text = whisper.transcribe(audio_data)
+      Sidekiq.logger.info("[job] Whisper response (#{text.length} chars): #{text[0..100]}...")
+
+      Sidekiq.logger.info("[job] Sending reply to chat=#{chat_id} reply_to=#{message_id}")
       telegram.reply_to_message(chat_id: chat_id, message_id: message_id, text: text)
 
       mark_transcribed(dedup_key)
       Bot::Stats.record_success!
-      Sidekiq.logger.info("Transcription successful: chat=#{chat_id} msg=#{message_id}")
+      Sidekiq.logger.info("[job] DONE TranscribeJob: chat=#{chat_id} msg=#{message_id}")
     rescue => e
+      Sidekiq.logger.error("[job] FAILED TranscribeJob: chat=#{chat_id} msg=#{message_id} error=#{e.class}: #{e.message}")
+      Sidekiq.logger.error("[job] #{e.backtrace&.first(5)&.join("\n")}")
       Bot::Stats.record_failure!
       notify_admin(e, chat_id, message_id)
       raise

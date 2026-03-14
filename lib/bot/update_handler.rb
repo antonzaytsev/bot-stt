@@ -1,5 +1,6 @@
 # frozen_string_literal: true
 
+require "logger"
 require_relative "../jobs/transcribe_job"
 
 module Bot
@@ -7,17 +8,39 @@ module Bot
     def initialize(payload)
       @payload = payload
       @message = payload["message"]
+      @logger = Logger.new($stdout)
+      @logger.formatter = proc { |severity, time, _, msg| "#{time.utc.iso8601} #{severity} [handler] #{msg}\n" }
     end
 
     def call
-      return unless @message
+      unless @message
+        @logger.info("No 'message' key in payload, keys: #{@payload.keys}")
+        return
+      end
 
-      if voice_message? && allowed_voice_chat?
-        handle_voice
-      elsif transcribe_request? && allowed_group_chat?
-        handle_transcribe_request
-      elsif bot_command? && private_admin_chat?
-        handle_command
+      chat_id = @message.dig("chat", "id")
+      chat_type = @message.dig("chat", "type")
+      from_id = @message.dig("from", "id")
+      msg_id = @message["message_id"]
+      @logger.info("Processing message: msg_id=#{msg_id} chat_id=#{chat_id} chat_type=#{chat_type} from=#{from_id}")
+
+      if voice_message?
+        @logger.info("Voice message detected")
+        if allowed_voice_chat?
+          @logger.info("Voice in allowed chat -> handle_voice")
+          handle_voice
+        else
+          @logger.info("Voice in disallowed chat, skipping")
+        end
+      elsif bot_command?
+        @logger.info("Bot command detected: #{@message["text"]}")
+        if private_admin_chat?
+          handle_command
+        else
+          @logger.info("Command in non-admin/non-private chat, skipping")
+        end
+      else
+        @logger.info("Message did not match any handler")
       end
     end
 
@@ -34,9 +57,8 @@ module Bot
 
     def allowed_group_chat?
       allowed_id = ENV["ALLOWED_CHAT_ID"]
-      return false if allowed_id.to_s.empty?
-
-      @message.dig("chat", "id").to_s == allowed_id.to_s
+      chat_id = @message.dig("chat", "id").to_s
+      !allowed_id.to_s.empty? && chat_id == allowed_id.to_s
     end
 
     def admin_user?
@@ -47,44 +69,18 @@ module Bot
       @message.key?("voice")
     end
 
-    def transcribe_request?
-      reply_to = @message.dig("reply_to_message")
-      return false unless reply_to&.key?("voice")
-
-      mentions_bot?
-    end
-
-    def mentions_bot?
-      entities = @message.dig("entities") || []
-      text = @message["text"].to_s
-
-      entities.any? do |e|
-        e["type"] == "mention" &&
-          text[e["offset"], e["length"]]&.downcase&.include?("bot")
-      end
-    end
-
     def bot_command?
-      entities = @message.dig("entities") || []
+      entities = @message["entities"] || []
       entities.any? { |e| e["type"] == "bot_command" }
     end
 
     def handle_voice
       voice = @message["voice"]
-      Jobs::TranscribeJob.perform_async(
-        @message["chat"]["id"],
-        @message["message_id"],
-        voice["file_id"]
-      )
-    end
-
-    def handle_transcribe_request
-      replied = @message["reply_to_message"]
-      Jobs::TranscribeJob.perform_async(
-        @message["chat"]["id"],
-        replied["message_id"],
-        replied["voice"]["file_id"]
-      )
+      chat_id = @message["chat"]["id"]
+      msg_id = @message["message_id"]
+      file_id = voice["file_id"]
+      @logger.info("Enqueuing TranscribeJob: chat=#{chat_id} msg=#{msg_id} file=#{file_id}")
+      Jobs::TranscribeJob.perform_async(chat_id, msg_id, file_id)
     end
 
     def handle_command
