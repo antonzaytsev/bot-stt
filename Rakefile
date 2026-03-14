@@ -3,6 +3,15 @@
 require_relative "config/environment"
 require_relative "lib/bot/telegram_client"
 
+require "rake/testtask"
+
+Rake::TestTask.new do |t|
+  t.pattern = "test/**/test_*.rb"
+  t.warning = false
+end
+
+task default: :test
+
 namespace :bot do
   desc "Register Telegram webhook (requires WEBHOOK_URL env var)"
   task :set_webhook do

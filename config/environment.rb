@@ -27,4 +27,4 @@ module Config
   end
 end
 
-Config.load!
+Config.load! unless ENV["RACK_ENV"] == "test"

@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
-require "httpx"
+require "net/http"
+require "uri"
 require "oj"
 
 module Bot
@@ -9,7 +10,6 @@ module Bot
 
     def initialize(token: Config["TELEGRAM_BOT_TOKEN"])
       @token = token
-      @http = HTTPX.with(timeout: { operation_timeout: 30 })
     end
 
     def set_webhook(url:, secret_token:)
@@ -33,19 +33,26 @@ module Bot
     end
 
     def download_file(file_path:)
-      url = "#{BASE_URL}/file/bot#{@token}/#{file_path}"
-      response = @http.get(url)
-      raise "Telegram download failed: #{response.status}" unless response.status == 200
+      uri = URI("#{BASE_URL}/file/bot#{@token}/#{file_path}")
+      response = Net::HTTP.get_response(uri)
+      raise "Telegram download failed: #{response.code}" unless response.is_a?(Net::HTTPSuccess)
 
-      response.body.to_s
+      response.body
     end
 
     private
 
     def post(method, **params)
-      url = "#{BASE_URL}/bot#{@token}/#{method}"
-      response = @http.post(url, json: params)
-      body = Oj.load(response.body.to_s)
+      uri = URI("#{BASE_URL}/bot#{@token}/#{method}")
+      request = Net::HTTP::Post.new(uri)
+      request["Content-Type"] = "application/json"
+      request.body = Oj.dump(params)
+
+      response = Net::HTTP.start(uri.hostname, uri.port, use_ssl: true, open_timeout: 10, read_timeout: 30) do |http|
+        http.request(request)
+      end
+
+      body = Oj.load(response.body)
       raise "Telegram API error: #{body["description"]}" unless body["ok"]
 
       body["result"]

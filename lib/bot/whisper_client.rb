@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
-require "httpx"
+require "net/http"
+require "uri"
 require "oj"
 require "tempfile"
 
@@ -10,33 +11,37 @@ module Bot
 
     def initialize(api_key: Config["OPENAI_API_KEY"])
       @api_key = api_key
-      @http = HTTPX.with(
-        timeout: { operation_timeout: 120 },
-        headers: { "Authorization" => "Bearer #{@api_key}" }
-      )
     end
 
     def transcribe(audio_data, filename: "voice.ogg")
-      tempfile = Tempfile.new(["voice", File.extname(filename)])
-      tempfile.binmode
-      tempfile.write(audio_data)
-      tempfile.rewind
+      uri = URI(API_URL)
+      boundary = "----FormBoundary#{SecureRandom.hex(16)}"
 
-      response = @http.plugin(:multipart).post(
-        API_URL,
-        form: {
-          file: { content_type: "audio/ogg", filename: filename, body: tempfile.read },
-          model: "whisper-1"
-        }
-      )
+      body = build_multipart_body(boundary, audio_data, filename)
 
-      tempfile.close
-      tempfile.unlink
+      request = Net::HTTP::Post.new(uri)
+      request["Authorization"] = "Bearer #{@api_key}"
+      request["Content-Type"] = "multipart/form-data; boundary=#{boundary}"
+      request.body = body
 
-      body = Oj.load(response.body.to_s)
-      raise "Whisper API error: #{body["error"]&.dig("message") || response.status}" unless response.status == 200
+      response = Net::HTTP.start(uri.hostname, uri.port, use_ssl: true, open_timeout: 30, read_timeout: 120) do |http|
+        http.request(request)
+      end
 
-      body["text"]
+      parsed = Oj.load(response.body)
+      raise "Whisper API error: #{parsed.dig("error", "message") || response.code}" unless response.is_a?(Net::HTTPSuccess)
+
+      parsed["text"]
+    end
+
+    private
+
+    def build_multipart_body(boundary, audio_data, filename)
+      parts = []
+      parts << "--#{boundary}\r\nContent-Disposition: form-data; name=\"file\"; filename=\"#{filename}\"\r\nContent-Type: audio/ogg\r\n\r\n#{audio_data}\r\n"
+      parts << "--#{boundary}\r\nContent-Disposition: form-data; name=\"model\"\r\n\r\nwhisper-1\r\n"
+      parts << "--#{boundary}--\r\n"
+      parts.join
     end
   end
 end
