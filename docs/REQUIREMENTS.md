@@ -129,6 +129,21 @@ The following environment variables are required (defined in `.env`):
 | `WEBHOOK_SECRET`      | Secret token for Telegram webhook verification  |
 | `PORT`                | App port — used for both host and container mapping (e.g. `3000`) |
 
+## Bot Settings (Future)
+
+Settings are managed via direct chat with the admin using `/settings` and `/set <name> on|off|<value>`. Stored in Redis, persist across restarts.
+
+| Setting | Type | Default | Description |
+|---------|------|---------|-------------|
+| `notify_voice` | on/off | off | **Implemented.** Notify admin after each transcription with audio duration, processing time, and Whisper cost. |
+| `language` | text | _(auto)_ | Force Whisper to use a specific language code (e.g. `en`, `uk`, `de`) instead of auto-detection. Improves accuracy when the spoken language is known in advance. |
+| `auto_improve` | on/off | off | Automatically run GPT post-processing on every transcription, not only on thumbs-down reaction. |
+| `whisper_prompt` | text | _(empty)_ | Custom prompt passed to Whisper API to help recognize domain-specific terms, names, or jargon. |
+| `improve_model` | text | gpt-4o-mini | GPT model used for the improvement step (`gpt-4o-mini`, `gpt-4o`, etc.). Trade-off between cost and quality. |
+| `notify_errors` | on/off | on | Send admin a DM when transcription fails. |
+| `paused` | on/off | off | Temporarily stop processing voice messages without removing the bot from the channel. |
+| `daily_cost_limit` | number | _(none)_ | Maximum daily Whisper spend in USD. Bot stops transcribing (and warns admin) when the limit is reached. Resets at midnight UTC. |
+
 ## Out of Scope (v1)
 
 - Transcription history or database storage.
