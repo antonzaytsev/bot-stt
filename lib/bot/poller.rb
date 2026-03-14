@@ -24,19 +24,19 @@ module Bot
       register_commands
       notify_admin("Bot started")
 
-      trap("INT") { stop }
-      trap("TERM") { stop }
+      trap("INT") { @running = false; Thread.main.raise(Interrupt) }
+      trap("TERM") { @running = false; Thread.main.raise(Interrupt) }
 
-      poll_loop
+      begin
+        poll_loop
+      rescue Interrupt
+        @logger.info("Shutting down poller...")
+      end
+
       notify_admin("Bot stopped")
     end
 
     private
-
-    def stop
-      @logger.info("Shutting down poller...")
-      @running = false
-    end
 
     def notify_admin(text)
       @telegram.send_message(chat_id: Config["ADMIN_CHAT_ID"], text: text)
@@ -62,6 +62,8 @@ module Bot
             @offset = update["update_id"] + 1
             process_update(update)
           end
+        rescue Interrupt
+          raise
         rescue => e
           @logger.error("Polling error: #{e.class}: #{e.message}")
           @logger.error(e.backtrace&.first(5)&.join("\n"))
