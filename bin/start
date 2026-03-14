@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+echo "==> Running bundle install..."
+bundle install --quiet
+
+case "${1:-web}" in
+  web)
+    echo "==> Starting Puma (web)..."
+    if [ "${RACK_ENV:-development}" = "development" ]; then
+      exec bundle exec rerun --background --no-notify -- bundle exec puma -C config/puma.rb
+    else
+      exec bundle exec puma -C config/puma.rb
+    fi
+    ;;
+  worker)
+    echo "==> Starting Sidekiq (worker)..."
+    exec bundle exec sidekiq -r ./app.rb
+    ;;
+  *)
+    echo "Usage: bin/start [web|worker]"
+    exit 1
+    ;;
+esac
