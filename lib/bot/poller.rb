@@ -22,11 +22,13 @@ module Bot
       @telegram.delete_webhook
       @logger.info("Webhook cleared, polling for updates")
       register_commands
+      notify_admin("Bot started")
 
       trap("INT") { stop }
       trap("TERM") { stop }
 
       poll_loop
+      notify_admin("Bot stopped")
     end
 
     private
@@ -34,6 +36,13 @@ module Bot
     def stop
       @logger.info("Shutting down poller...")
       @running = false
+    end
+
+    def notify_admin(text)
+      @telegram.send_message(chat_id: Config["ADMIN_CHAT_ID"], text: text)
+      @logger.info("Admin notified: #{text}")
+    rescue => e
+      @logger.error("Failed to notify admin: #{e.message}")
     end
 
     def register_commands
