@@ -101,17 +101,20 @@ module Bot
       chat_id = @message["chat"]["id"]
       msg_id = @message["message_id"]
       file_id = voice["file_id"]
-      @logger.info("Enqueuing TranscribeJob: chat=#{chat_id} msg=#{msg_id} file=#{file_id}")
-      Jobs::TranscribeJob.perform_async(chat_id, msg_id, file_id)
+      duration = voice["duration"]
+      @logger.info("Enqueuing TranscribeJob: chat=#{chat_id} msg=#{msg_id} file=#{file_id} duration=#{duration}")
+      Jobs::TranscribeJob.perform_async(chat_id, msg_id, file_id, duration)
     end
 
     def handle_command
       text = @message["text"].to_s
-      command = text.split(" ").first&.downcase&.split("@")&.first
+      parts = text.split(" ")
+      command = parts.first&.downcase&.split("@")&.first
+      args = parts[1..] || []
       user_id = @message.dig("from", "id").to_s
       chat_id = @message["chat"]["id"]
 
-      Bot::CommandHandler.call(command: command, user_id: user_id, chat_id: chat_id)
+      Bot::CommandHandler.call(command: command, args: args, user_id: user_id, chat_id: chat_id)
     end
   end
 end

@@ -9,6 +9,7 @@ class TestCommandHandler < Minitest::Test
   def setup
     stub_request(:post, "#{TELEGRAM_API}/sendMessage")
       .to_return(status: 200, body: Oj.dump({ "ok" => true, "result" => {} }))
+    Sidekiq.redis { |c| c.call("DEL", "bot:settings:notify_voice") }
   end
 
   def test_ping_replies_pong
@@ -67,6 +68,72 @@ class TestCommandHandler < Minitest::Test
     assert_requested(:post, "#{TELEGRAM_API}/sendMessage") { |req|
       body = Oj.load(req.body)
       body["chat_id"] == ADMIN_ID
+    }
+  end
+
+  def test_settings_shows_current_values
+    Bot::CommandHandler.call(command: "/settings", user_id: ADMIN_ID, chat_id: ADMIN_ID)
+
+    assert_requested(:post, "#{TELEGRAM_API}/sendMessage") { |req|
+      body = Oj.load(req.body)
+      body["text"].include?("Notify on voice processing: OFF")
+    }
+  end
+
+  def test_set_enables_setting
+    Bot::CommandHandler.call(command: "/set", args: ["notify_voice", "on"], user_id: ADMIN_ID, chat_id: ADMIN_ID)
+
+    assert_requested(:post, "#{TELEGRAM_API}/sendMessage") { |req|
+      body = Oj.load(req.body)
+      body["text"].include?("ON")
+    }
+    assert Bot::Settings.get("notify_voice")
+  end
+
+  def test_set_disables_setting
+    Bot::Settings.set("notify_voice", true)
+    Bot::CommandHandler.call(command: "/set", args: ["notify_voice", "off"], user_id: ADMIN_ID, chat_id: ADMIN_ID)
+
+    assert_requested(:post, "#{TELEGRAM_API}/sendMessage") { |req|
+      body = Oj.load(req.body)
+      body["text"].include?("OFF")
+    }
+    refute Bot::Settings.get("notify_voice")
+  end
+
+  def test_set_rejects_unknown_setting
+    Bot::CommandHandler.call(command: "/set", args: ["bogus", "on"], user_id: ADMIN_ID, chat_id: ADMIN_ID)
+
+    assert_requested(:post, "#{TELEGRAM_API}/sendMessage") { |req|
+      body = Oj.load(req.body)
+      body["text"].include?("Unknown setting")
+    }
+  end
+
+  def test_set_rejects_invalid_value
+    Bot::CommandHandler.call(command: "/set", args: ["notify_voice", "maybe"], user_id: ADMIN_ID, chat_id: ADMIN_ID)
+
+    assert_requested(:post, "#{TELEGRAM_API}/sendMessage") { |req|
+      body = Oj.load(req.body)
+      body["text"].include?("on") && body["text"].include?("off")
+    }
+  end
+
+  def test_set_without_args_shows_usage
+    Bot::CommandHandler.call(command: "/set", args: [], user_id: ADMIN_ID, chat_id: ADMIN_ID)
+
+    assert_requested(:post, "#{TELEGRAM_API}/sendMessage") { |req|
+      body = Oj.load(req.body)
+      body["text"].include?("Usage")
+    }
+  end
+
+  def test_help_includes_settings_commands
+    Bot::CommandHandler.call(command: "/help", user_id: ADMIN_ID, chat_id: ADMIN_ID)
+
+    assert_requested(:post, "#{TELEGRAM_API}/sendMessage") { |req|
+      body = Oj.load(req.body)
+      body["text"].include?("/settings") && body["text"].include?("/set")
     }
   end
 end
