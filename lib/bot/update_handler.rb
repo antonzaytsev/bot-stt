@@ -2,22 +2,31 @@
 
 require "logger"
 require_relative "../jobs/transcribe_job"
+require_relative "../jobs/improve_transcription_job"
 
 module Bot
   class UpdateHandler
+    THUMBS_DOWN = "\u{1F44E}"
+
     def initialize(payload)
       @payload = payload
       @message = payload["message"]
+      @reaction = payload["message_reaction"]
       @logger = Logger.new($stdout)
       @logger.formatter = proc { |severity, time, _, msg| "#{time.utc.iso8601} #{severity} [handler] #{msg}\n" }
     end
 
     def call
-      unless @message
-        @logger.info("No 'message' key in payload, keys: #{@payload.keys}")
-        return
+      if @reaction
+        handle_reaction
+      elsif @message
+        handle_message
+      else
+        @logger.info("Unhandled update, keys: #{@payload.keys}")
       end
+    end
 
+    def handle_message
       chat_id = @message.dig("chat", "id")
       chat_type = @message.dig("chat", "type")
       from_id = @message.dig("from", "id")
@@ -42,6 +51,19 @@ module Bot
       else
         @logger.info("Message did not match any handler")
       end
+    end
+
+    def handle_reaction
+      chat_id = @reaction.dig("chat", "id")
+      msg_id = @reaction["message_id"]
+      new_reactions = @reaction["new_reaction"] || []
+      has_thumbs_down = new_reactions.any? { |r| r["type"] == "emoji" && r["emoji"] == THUMBS_DOWN }
+
+      @logger.info("Reaction on msg=#{msg_id} chat=#{chat_id} thumbs_down=#{has_thumbs_down}")
+      return unless has_thumbs_down
+
+      @logger.info("Thumbs down detected -> enqueuing ImproveTranscriptionJob")
+      Jobs::ImproveTranscriptionJob.perform_async(chat_id, msg_id)
     end
 
     private

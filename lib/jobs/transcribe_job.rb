@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "sidekiq"
+require "oj"
 require_relative "../bot/telegram_client"
 require_relative "../bot/whisper_client"
 require_relative "../bot/stats"
@@ -49,9 +50,12 @@ module Jobs
       Sidekiq.logger.info("[job] Whisper response (#{text.length} chars): #{text[0..100]}...")
 
       Sidekiq.logger.info("[job] Sending reply to chat=#{chat_id} reply_to=#{message_id}")
-      telegram.reply_to_message(chat_id: chat_id, message_id: message_id, text: text)
+      sent = telegram.reply_to_message(chat_id: chat_id, message_id: message_id, text: text)
+      bot_msg_id = sent["message_id"]
+      Sidekiq.logger.info("[job] Bot reply sent as msg=#{bot_msg_id}")
 
       mark_transcribed(dedup_key)
+      store_transcription_meta(chat_id, bot_msg_id, file_id, text)
       Bot::Stats.record_success!
       Sidekiq.logger.info("[job] DONE TranscribeJob: chat=#{chat_id} msg=#{message_id}")
     rescue => e
@@ -70,6 +74,12 @@ module Jobs
 
     def mark_transcribed(key)
       Sidekiq.redis { |c| c.call("SET", key, "1", "EX", DEDUP_TTL) }
+    end
+
+    def store_transcription_meta(chat_id, bot_msg_id, file_id, text)
+      key = "transcription_meta:#{chat_id}:#{bot_msg_id}"
+      data = Oj.dump({ "file_id" => file_id, "text" => text })
+      Sidekiq.redis { |c| c.call("SET", key, data, "EX", DEDUP_TTL) }
     end
 
     def notify_admin(error, chat_id, message_id)

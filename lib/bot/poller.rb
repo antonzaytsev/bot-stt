@@ -54,17 +54,18 @@ module Bot
     end
 
     def process_update(update)
-      msg = update["message"]
-      chat = msg&.dig("chat")
       @logger.info("--- Update id=#{update["update_id"]} ---")
-      @logger.info("  chat_id=#{chat&.dig("id")} type=#{chat&.dig("type")} title=#{chat&.dig("title") || "DM"}")
-      @logger.info("  message keys: #{msg&.keys}")
-      @logger.info("  has voice: #{msg&.key?("voice")}")
-      @logger.info("  reply_to_message keys: #{msg&.dig("reply_to_message")&.keys || "nil"}")
-      @logger.info("  reply_to has voice: #{msg&.dig("reply_to_message")&.key?("voice") || "N/A"}")
-      @logger.info("  text: #{msg&.dig("text").inspect}")
-      @logger.info("  entities: #{msg&.dig("entities").inspect}")
-      @logger.info("  Raw JSON: #{JSON.generate(update)}")
+
+      if update["message"]
+        msg = update["message"]
+        chat = msg.dig("chat")
+        @logger.info("  [message] chat_id=#{chat&.dig("id")} type=#{chat&.dig("type")} has_voice=#{msg.key?("voice")} text=#{msg.dig("text").inspect}")
+      elsif update["message_reaction"]
+        reaction = update["message_reaction"]
+        @logger.info("  [reaction] chat_id=#{reaction.dig("chat", "id")} msg_id=#{reaction["message_id"]} new=#{reaction["new_reaction"]}")
+      else
+        @logger.info("  [unknown] keys=#{update.keys}")
+      end
 
       UpdateHandler.new(update).call
     rescue => e

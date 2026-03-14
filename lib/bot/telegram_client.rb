@@ -13,7 +13,7 @@ module Bot
     end
 
     def get_updates(offset: nil, timeout: 30)
-      params = { timeout: timeout, allowed_updates: ["message"] }
+      params = { timeout: timeout, allowed_updates: ["message", "message_reaction"] }
       params[:offset] = offset if offset
       post("getUpdates", **params)
     end
@@ -32,6 +32,12 @@ module Bot
       params = { chat_id: chat_id, reply_to_message_id: message_id, text: text }
       params[:parse_mode] = parse_mode if parse_mode
       post("sendMessage", **params)
+    end
+
+    def edit_message_text(chat_id:, message_id:, text:, parse_mode: nil)
+      params = { chat_id: chat_id, message_id: message_id, text: text }
+      params[:parse_mode] = parse_mode if parse_mode
+      post("editMessageText", **params)
     end
 
     def get_file(file_id:)
