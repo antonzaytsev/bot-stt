@@ -51,7 +51,9 @@ module Bot
     end
 
     def process_update(update)
-      @logger.info("Update received: update_id=#{update["update_id"]}")
+      msg = update["message"]
+      chat = msg&.dig("chat")
+      @logger.info("Update: id=#{update["update_id"]} chat_id=#{chat&.dig("id")} type=#{chat&.dig("type")} title=#{chat&.dig("title") || "DM"}")
       UpdateHandler.new(update).call
     rescue => e
       @logger.error("Failed to process update #{update["update_id"]}: #{e.class}: #{e.message}")

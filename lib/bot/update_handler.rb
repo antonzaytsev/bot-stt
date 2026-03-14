@@ -11,11 +11,10 @@ module Bot
 
     def call
       return unless @message
-      return unless private_admin_chat?
 
-      if voice_message?
+      if voice_message? && allowed_voice_chat?
         handle_voice
-      elsif bot_command?
+      elsif bot_command? && private_admin_chat?
         handle_command
       end
     end
@@ -24,7 +23,22 @@ module Bot
 
     def private_admin_chat?
       @message.dig("chat", "type") == "private" &&
-        @message.dig("from", "id").to_s == Config["ADMIN_CHAT_ID"].to_s
+        admin_user?
+    end
+
+    def allowed_voice_chat?
+      private_admin_chat? || allowed_group_chat?
+    end
+
+    def allowed_group_chat?
+      allowed_id = ENV["ALLOWED_CHAT_ID"]
+      return false if allowed_id.to_s.empty?
+
+      @message.dig("chat", "id").to_s == allowed_id.to_s
+    end
+
+    def admin_user?
+      @message.dig("from", "id").to_s == Config["ADMIN_CHAT_ID"].to_s
     end
 
     def voice_message?
