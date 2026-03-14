@@ -2,6 +2,7 @@ services:
   web:
     build: .
     command: web
+    restart: unless-stopped
     ports:
       - "${PORT}:${PORT}"
     volumes:
@@ -20,6 +21,7 @@ services:
   worker:
     build: .
     command: worker
+    restart: unless-stopped
     volumes:
       - .:/app
       - bundle:/usr/local/bundle
@@ -31,6 +33,7 @@ services:
   poller:
     build: .
     command: poller
+    restart: unless-stopped
     volumes:
       - .:/app
       - bundle:/usr/local/bundle
@@ -41,6 +44,7 @@ services:
 
   redis:
     image: redis:7-alpine
+    restart: unless-stopped
     volumes:
       - redis_data:/data
     healthcheck:
