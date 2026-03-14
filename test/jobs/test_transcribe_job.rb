@@ -9,6 +9,8 @@ class TestTranscribeJob < Minitest::Test
     Bot::Stats.instance_variable_set(:@failed, 0)
     Bot::Stats.instance_variable_set(:@last_reset_date, Date.today)
 
+    Sidekiq.redis { |c| c.call("FLUSHDB") }
+
     stub_request(:post, "#{TELEGRAM_API}/getFile")
       .to_return(status: 200, body: Oj.dump({ "ok" => true, "result" => { "file_path" => "voice/file.ogg" } }))
 
@@ -36,6 +38,23 @@ class TestTranscribeJob < Minitest::Test
     }
     assert_equal 1, Bot::Stats.processed
     assert_equal 0, Bot::Stats.failed
+  end
+
+  def test_marks_message_as_transcribed_in_redis
+    Jobs::TranscribeJob.new.perform(-1001234, 42, "file_abc")
+
+    exists = Sidekiq.redis { |c| c.call("EXISTS", "transcribed:-1001234:42") }
+    assert_equal 1, exists
+  end
+
+  def test_skips_already_transcribed_message
+    Sidekiq.redis { |c| c.call("SET", "transcribed:-1001234:42", "1") }
+
+    Jobs::TranscribeJob.new.perform(-1001234, 42, "file_abc")
+
+    assert_not_requested(:post, "#{TELEGRAM_API}/getFile")
+    assert_not_requested(:post, "https://api.openai.com/v1/audio/transcriptions")
+    assert_equal 0, Bot::Stats.processed
   end
 
   def test_records_failure_and_notifies_admin_on_whisper_error

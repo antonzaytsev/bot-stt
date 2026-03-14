@@ -46,6 +46,53 @@ class TestUpdateHandler < Minitest::Test
     assert_equal 0, Jobs::TranscribeJob.jobs.size
   end
 
+  def test_transcribe_request_via_reply_and_mention
+    ENV["ALLOWED_CHAT_ID"] = GROUP_ID.to_s
+    payload = transcribe_request_payload(
+      chat_id: GROUP_ID, chat_type: "supergroup", from_id: 999,
+      replied_message_id: 10, replied_file_id: "old_voice_123"
+    )
+
+    Bot::UpdateHandler.new(payload).call
+
+    assert_equal 1, Jobs::TranscribeJob.jobs.size
+    job = Jobs::TranscribeJob.jobs.first
+    assert_equal [GROUP_ID, 10, "old_voice_123"], job["args"]
+  end
+
+  def test_transcribe_request_ignored_in_non_allowed_group
+    payload = transcribe_request_payload(
+      chat_id: GROUP_ID, chat_type: "supergroup", from_id: 999,
+      replied_message_id: 10, replied_file_id: "old_voice_123"
+    )
+
+    Bot::UpdateHandler.new(payload).call
+
+    assert_equal 0, Jobs::TranscribeJob.jobs.size
+  end
+
+  def test_transcribe_request_ignored_when_reply_is_not_voice
+    ENV["ALLOWED_CHAT_ID"] = GROUP_ID.to_s
+    payload = {
+      "update_id" => 1,
+      "message" => {
+        "message_id" => 50,
+        "chat" => { "id" => GROUP_ID, "type" => "supergroup" },
+        "from" => { "id" => 999 },
+        "text" => "@curse_assistant_bot",
+        "entities" => [{ "type" => "mention", "offset" => 0, "length" => 20 }],
+        "reply_to_message" => {
+          "message_id" => 10,
+          "text" => "just a text message"
+        }
+      }
+    }
+
+    Bot::UpdateHandler.new(payload).call
+
+    assert_equal 0, Jobs::TranscribeJob.jobs.size
+  end
+
   def test_delegates_command_in_private_admin_chat
     payload = command_payload(chat_id: ADMIN_ID, chat_type: "private", from_id: ADMIN_ID)
 
@@ -116,6 +163,23 @@ class TestUpdateHandler < Minitest::Test
         "chat" => { "id" => chat_id, "type" => chat_type },
         "from" => { "id" => from_id },
         "voice" => { "file_id" => "abc123", "duration" => 5 }
+      }
+    }
+  end
+
+  def transcribe_request_payload(chat_id:, chat_type:, from_id:, replied_message_id:, replied_file_id:)
+    {
+      "update_id" => 1,
+      "message" => {
+        "message_id" => 50,
+        "chat" => { "id" => chat_id, "type" => chat_type },
+        "from" => { "id" => from_id },
+        "text" => "@curse_assistant_bot",
+        "entities" => [{ "type" => "mention", "offset" => 0, "length" => 20 }],
+        "reply_to_message" => {
+          "message_id" => replied_message_id,
+          "voice" => { "file_id" => replied_file_id, "duration" => 10 }
+        }
       }
     }
   end

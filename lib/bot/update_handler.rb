@@ -14,6 +14,8 @@ module Bot
 
       if voice_message? && allowed_voice_chat?
         handle_voice
+      elsif transcribe_request? && allowed_group_chat?
+        handle_transcribe_request
       elsif bot_command? && private_admin_chat?
         handle_command
       end
@@ -45,16 +47,43 @@ module Bot
       @message.key?("voice")
     end
 
+    def transcribe_request?
+      reply_to = @message.dig("reply_to_message")
+      return false unless reply_to&.key?("voice")
+
+      mentions_bot?
+    end
+
+    def mentions_bot?
+      entities = @message.dig("entities") || []
+      text = @message["text"].to_s
+
+      entities.any? do |e|
+        e["type"] == "mention" &&
+          text[e["offset"], e["length"]]&.downcase&.include?("bot")
+      end
+    end
+
     def bot_command?
       entities = @message.dig("entities") || []
       entities.any? { |e| e["type"] == "bot_command" }
     end
 
     def handle_voice
+      voice = @message["voice"]
       Jobs::TranscribeJob.perform_async(
         @message["chat"]["id"],
         @message["message_id"],
-        @message["voice"]["file_id"]
+        voice["file_id"]
+      )
+    end
+
+    def handle_transcribe_request
+      replied = @message["reply_to_message"]
+      Jobs::TranscribeJob.perform_async(
+        @message["chat"]["id"],
+        replied["message_id"],
+        replied["voice"]["file_id"]
       )
     end
 
