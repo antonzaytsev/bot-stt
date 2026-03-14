@@ -8,6 +8,7 @@ require_relative "settings"
 module Bot
   class CommandHandler
     COMMANDS = {
+      "/start" => :cmd_start,
       "/ping" => :cmd_ping,
       "/status" => :cmd_status,
       "/stats" => :cmd_stats,
@@ -15,6 +16,16 @@ module Bot
       "/set" => :cmd_set,
       "/help" => :cmd_help
     }.freeze
+
+    MENU = [
+      { command: "start", description: "Welcome message with commands and settings" },
+      { command: "ping", description: "Liveness check" },
+      { command: "status", description: "Bot health, Redis, Sidekiq queue" },
+      { command: "stats", description: "Processed/failed counts today" },
+      { command: "settings", description: "View bot settings" },
+      { command: "set", description: "Change a setting — /set <name> on|off" },
+      { command: "help", description: "List available commands" }
+    ].freeze
 
     def self.call(command:, args: [], user_id:, chat_id:)
       new(command: command, args: args, user_id: user_id, chat_id: chat_id).call
@@ -43,6 +54,26 @@ module Bot
 
     def reply(text)
       @telegram.send_message(chat_id: @user_id, text: text)
+    end
+
+    def cmd_start
+      lines = [
+        "Voice-to-Text Bot",
+        "",
+        "Commands:",
+        "/ping — liveness check",
+        "/status — bot health, Redis, Sidekiq queue",
+        "/stats — processed/failed counts today",
+        "/settings — view bot settings",
+        "/set <name> on|off — change a setting",
+        "/help — this message",
+        ""
+      ]
+      Settings.all.each do |key, value|
+        label = Settings::LABELS[key] || key
+        lines << "  #{label}: #{value ? "ON" : "OFF"}"
+      end
+      reply(lines.join("\n"))
     end
 
     def cmd_ping

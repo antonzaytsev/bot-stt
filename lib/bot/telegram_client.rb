@@ -40,6 +40,10 @@ module Bot
       post("editMessageText", **params)
     end
 
+    def set_my_commands(commands)
+      post("setMyCommands", commands: commands)
+    end
+
     def get_file(file_id:)
       post("getFile", file_id: file_id)
     end

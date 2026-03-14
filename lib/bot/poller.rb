@@ -21,6 +21,7 @@ module Bot
       @logger.info("Starting poller...")
       @telegram.delete_webhook
       @logger.info("Webhook cleared, polling for updates")
+      register_commands
 
       trap("INT") { stop }
       trap("TERM") { stop }
@@ -33,6 +34,13 @@ module Bot
     def stop
       @logger.info("Shutting down poller...")
       @running = false
+    end
+
+    def register_commands
+      @telegram.set_my_commands(CommandHandler::MENU)
+      @logger.info("Bot command menu registered")
+    rescue => e
+      @logger.error("Failed to register command menu: #{e.message}")
     end
 
     def poll_loop
