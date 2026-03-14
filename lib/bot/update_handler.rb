@@ -11,6 +11,7 @@ module Bot
 
     def call
       return unless @message
+      return unless private_admin_chat?
 
       if voice_message?
         handle_voice
@@ -20,6 +21,11 @@ module Bot
     end
 
     private
+
+    def private_admin_chat?
+      @message.dig("chat", "type") == "private" &&
+        @message.dig("from", "id").to_s == Config["ADMIN_CHAT_ID"].to_s
+    end
 
     def voice_message?
       @message.key?("voice")
