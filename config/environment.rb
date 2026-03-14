@@ -11,7 +11,6 @@ module Config
     OPENAI_API_KEY
     ADMIN_CHAT_ID
     REDIS_URL
-    WEBHOOK_SECRET
     PORT
   ].freeze
 

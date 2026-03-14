@@ -2,13 +2,14 @@
 
 require_relative "../test_helper"
 
-class TestWebhookHandler < Minitest::Test
+class TestUpdateHandler < Minitest::Test
   def setup
     Sidekiq::Worker.clear_all
   end
 
   def test_enqueues_transcribe_job_for_voice_message
     payload = {
+      "update_id" => 1,
       "message" => {
         "message_id" => 42,
         "chat" => { "id" => -1001234 },
@@ -17,7 +18,7 @@ class TestWebhookHandler < Minitest::Test
       }
     }
 
-    Bot::WebhookHandler.new(payload).call
+    Bot::UpdateHandler.new(payload).call
 
     assert_equal 1, Jobs::TranscribeJob.jobs.size
     job = Jobs::TranscribeJob.jobs.first
@@ -26,6 +27,7 @@ class TestWebhookHandler < Minitest::Test
 
   def test_delegates_command_to_command_handler
     payload = {
+      "update_id" => 2,
       "message" => {
         "message_id" => 10,
         "chat" => { "id" => 123_456 },
@@ -38,7 +40,7 @@ class TestWebhookHandler < Minitest::Test
     stub_request(:post, "#{TELEGRAM_API}/sendMessage")
       .to_return(status: 200, body: Oj.dump({ "ok" => true, "result" => {} }))
 
-    Bot::WebhookHandler.new(payload).call
+    Bot::UpdateHandler.new(payload).call
 
     assert_equal 0, Jobs::TranscribeJob.jobs.size
     assert_requested(:post, "#{TELEGRAM_API}/sendMessage")
@@ -46,12 +48,13 @@ class TestWebhookHandler < Minitest::Test
 
   def test_ignores_payload_without_message
     payload = { "update_id" => 1 }
-    Bot::WebhookHandler.new(payload).call
+    Bot::UpdateHandler.new(payload).call
     assert_equal 0, Jobs::TranscribeJob.jobs.size
   end
 
   def test_ignores_text_message_without_command
     payload = {
+      "update_id" => 3,
       "message" => {
         "message_id" => 10,
         "chat" => { "id" => -1001234 },
@@ -60,12 +63,13 @@ class TestWebhookHandler < Minitest::Test
       }
     }
 
-    Bot::WebhookHandler.new(payload).call
+    Bot::UpdateHandler.new(payload).call
     assert_equal 0, Jobs::TranscribeJob.jobs.size
   end
 
   def test_handles_command_with_bot_mention
     payload = {
+      "update_id" => 4,
       "message" => {
         "message_id" => 10,
         "chat" => { "id" => 123_456 },
@@ -78,7 +82,7 @@ class TestWebhookHandler < Minitest::Test
     stub_request(:post, "#{TELEGRAM_API}/sendMessage")
       .to_return(status: 200, body: Oj.dump({ "ok" => true, "result" => {} }))
 
-    Bot::WebhookHandler.new(payload).call
+    Bot::UpdateHandler.new(payload).call
     assert_requested(:post, "#{TELEGRAM_API}/sendMessage")
   end
 end

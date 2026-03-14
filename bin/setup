@@ -56,14 +56,11 @@ if [ "${skip_env:-}" != "true" ]; then
   prompt APP_PORT     "App port" "3000"
   prompt ENVIRONMENT  "Environment (development/production)" "development"
 
-  WEBHOOK_SECRET=$(LC_ALL=C tr -dc 'a-zA-Z0-9' < /dev/urandom | head -c 32 || true)
-
   cat > .env <<ENVFILE
 TELEGRAM_BOT_TOKEN=${BOT_TOKEN}
 OPENAI_API_KEY=${OPENAI_KEY}
 ADMIN_CHAT_ID=${ADMIN_ID}
 REDIS_URL=redis://redis:6379/0
-WEBHOOK_SECRET=${WEBHOOK_SECRET}
 PORT=${APP_PORT}
 RACK_ENV=${ENVIRONMENT}
 ENVFILE
@@ -83,6 +80,4 @@ echo "  Setup complete!"
 echo "========================================="
 echo ""
 info "Start the app:  docker compose up"
-info "Register webhook after the app is publicly reachable:"
-echo "  docker compose exec web bundle exec rake bot:set_webhook WEBHOOK_URL=https://your-domain.com/webhook"
 echo ""

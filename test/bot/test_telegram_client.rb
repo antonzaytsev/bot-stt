@@ -67,16 +67,26 @@ class TestTelegramClient < Minitest::Test
     assert_raises(RuntimeError) { @client.download_file(file_path: "voice/file.ogg") }
   end
 
-  def test_set_webhook
-    stub_request(:post, "#{TELEGRAM_API}/setWebhook")
+  def test_get_updates
+    updates = [{ "update_id" => 1, "message" => {} }]
+    stub_request(:post, "#{TELEGRAM_API}/getUpdates")
+      .to_return(status: 200, body: Oj.dump({ "ok" => true, "result" => updates }))
+
+    result = @client.get_updates(offset: 1, timeout: 10)
+
+    assert_equal 1, result.length
+    assert_requested(:post, "#{TELEGRAM_API}/getUpdates") { |req|
+      body = Oj.load(req.body)
+      body["offset"] == 1 && body["timeout"] == 10
+    }
+  end
+
+  def test_delete_webhook
+    stub_request(:post, "#{TELEGRAM_API}/deleteWebhook")
       .to_return(status: 200, body: Oj.dump({ "ok" => true, "result" => true }))
 
-    @client.set_webhook(url: "https://example.com/webhook", secret_token: "secret")
-
-    assert_requested(:post, "#{TELEGRAM_API}/setWebhook") { |req|
-      body = Oj.load(req.body)
-      body["url"] == "https://example.com/webhook"
-    }
+    result = @client.delete_webhook
+    assert_equal true, result
   end
 
   def test_raises_on_api_error

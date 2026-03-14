@@ -17,8 +17,12 @@ case "${1:-web}" in
     echo "==> Starting Sidekiq (worker)..."
     exec bundle exec sidekiq -r ./app.rb
     ;;
+  poller)
+    echo "==> Starting Telegram poller..."
+    exec bundle exec ruby lib/bot/poller_runner.rb
+    ;;
   *)
-    echo "Usage: bin/start [web|worker]"
+    echo "Usage: bin/start [web|worker|poller]"
     exit 1
     ;;
 esac

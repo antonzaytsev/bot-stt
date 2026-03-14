@@ -3,7 +3,7 @@
 require_relative "../jobs/transcribe_job"
 
 module Bot
-  class WebhookHandler
+  class UpdateHandler
     def initialize(payload)
       @payload = payload
       @message = payload["message"]

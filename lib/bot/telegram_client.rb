@@ -12,8 +12,14 @@ module Bot
       @token = token
     end
 
-    def set_webhook(url:, secret_token:)
-      post("setWebhook", url: url, secret_token: secret_token, allowed_updates: ["message"])
+    def get_updates(offset: nil, timeout: 30)
+      params = { timeout: timeout, allowed_updates: ["message"] }
+      params[:offset] = offset if offset
+      post("getUpdates", **params)
+    end
+
+    def delete_webhook
+      post("deleteWebhook")
     end
 
     def send_message(chat_id:, text:, parse_mode: nil)
@@ -48,7 +54,9 @@ module Bot
       request["Content-Type"] = "application/json"
       request.body = Oj.dump(params)
 
-      response = Net::HTTP.start(uri.hostname, uri.port, use_ssl: true, open_timeout: 10, read_timeout: 30) do |http|
+      read_timeout = params[:timeout] ? params[:timeout] + 5 : 30
+
+      response = Net::HTTP.start(uri.hostname, uri.port, use_ssl: true, open_timeout: 10, read_timeout: read_timeout) do |http|
         http.request(request)
       end
 

@@ -2,6 +2,8 @@
 
 Telegram bot that transcribes voice messages to text using OpenAI Whisper. Add it to a private channel — it listens for voice messages, transcribes them, and replies with the text. Managed entirely via Telegram commands, no web UI.
 
+Uses **long polling** — no public URL or webhook setup needed.
+
 ## Prerequisites
 
 - Docker & Docker Compose
@@ -33,13 +35,7 @@ docker compose build
 docker compose up
 ```
 
-## Register Webhook
-
-After the app is running and reachable at a public URL:
-
-```bash
-docker compose exec web bundle exec rake bot:set_webhook WEBHOOK_URL=https://your-domain.com/webhook
-```
+This starts 4 services: **web** (health endpoint), **poller** (Telegram long polling), **worker** (Sidekiq), **redis**.
 
 ## Bot Commands
 
