@@ -5,6 +5,7 @@ require "oj"
 require_relative "../bot/telegram_client"
 require_relative "../bot/whisper_client"
 require_relative "../bot/stats"
+require_relative "../bot/settings"
 
 module Jobs
   class TranscribeJob
@@ -13,6 +14,7 @@ module Jobs
     sidekiq_options retry: 2
 
     DEDUP_TTL = 30 * 24 * 3600 # 30 days
+    WHISPER_COST_PER_MINUTE = 0.006
 
     sidekiq_retries_exhausted do |job, ex|
       admin_id = Config["ADMIN_CHAT_ID"]
@@ -25,8 +27,9 @@ module Jobs
       Sidekiq.logger.error("Failed to notify admin on retries exhausted: #{e.message}")
     end
 
-    def perform(chat_id, message_id, file_id)
+    def perform(chat_id, message_id, file_id, duration = nil)
       Sidekiq.logger.info("[job] START TranscribeJob: chat=#{chat_id} msg=#{message_id} file=#{file_id}")
+      job_start = Process.clock_gettime(Process::CLOCK_MONOTONIC)
       dedup_key = "transcribed:#{chat_id}:#{message_id}"
 
       if already_transcribed?(dedup_key)
@@ -57,6 +60,10 @@ module Jobs
       mark_transcribed(dedup_key)
       store_transcription_meta(chat_id, bot_msg_id, file_id, text)
       Bot::Stats.record_success!
+
+      elapsed = Process.clock_gettime(Process::CLOCK_MONOTONIC) - job_start
+      notify_voice_processed(telegram, duration, elapsed) if Bot::Settings.get("notify_voice")
+
       Sidekiq.logger.info("[job] DONE TranscribeJob: chat=#{chat_id} msg=#{message_id}")
     rescue => e
       Sidekiq.logger.error("[job] FAILED TranscribeJob: chat=#{chat_id} msg=#{message_id} error=#{e.class}: #{e.message}")
@@ -80,6 +87,19 @@ module Jobs
       key = "transcription_meta:#{chat_id}:#{bot_msg_id}"
       data = Oj.dump({ "file_id" => file_id, "text" => text })
       Sidekiq.redis { |c| c.call("SET", key, data, "EX", DEDUP_TTL) }
+    end
+
+    def notify_voice_processed(telegram, duration, elapsed)
+      parts = ["Voice transcribed"]
+      parts << "Audio: #{duration}s" if duration
+      parts << "Time: #{elapsed.round(1)}s"
+      if duration
+        cost = (duration / 60.0) * WHISPER_COST_PER_MINUTE
+        parts << "Cost: $#{"%.4f" % cost}"
+      end
+      telegram.send_message(chat_id: Config["ADMIN_CHAT_ID"], text: parts.join(" | "))
+    rescue => e
+      Sidekiq.logger.error("Failed to send voice notification: #{e.message}")
     end
 
     def notify_admin(error, chat_id, message_id)

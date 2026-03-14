@@ -17,7 +17,7 @@ class TestUpdateHandler < Minitest::Test
     Bot::UpdateHandler.new(payload).call
 
     assert_equal 1, Jobs::TranscribeJob.jobs.size
-    assert_equal [ADMIN_ID, 42, "abc123"], Jobs::TranscribeJob.jobs.first["args"]
+    assert_equal [ADMIN_ID, 42, "abc123", 5], Jobs::TranscribeJob.jobs.first["args"]
   end
 
   def test_enqueues_transcribe_job_for_allowed_group
@@ -27,7 +27,7 @@ class TestUpdateHandler < Minitest::Test
     Bot::UpdateHandler.new(payload).call
 
     assert_equal 1, Jobs::TranscribeJob.jobs.size
-    assert_equal [GROUP_ID, 42, "abc123"], Jobs::TranscribeJob.jobs.first["args"]
+    assert_equal [GROUP_ID, 42, "abc123", 5], Jobs::TranscribeJob.jobs.first["args"]
   end
 
   def test_ignores_voice_from_non_allowed_group
@@ -57,7 +57,7 @@ class TestUpdateHandler < Minitest::Test
 
     assert_equal 1, Jobs::TranscribeJob.jobs.size
     job = Jobs::TranscribeJob.jobs.first
-    assert_equal [GROUP_ID, 10, "old_voice_123"], job["args"]
+    assert_equal [GROUP_ID, 10, "old_voice_123", 10], job["args"]
   end
 
   def test_transcribe_request_ignored_in_non_allowed_group
