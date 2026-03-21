@@ -58,7 +58,9 @@ module Jobs
       Sidekiq.logger.info("[job] Bot reply sent as msg=#{bot_msg_id}")
 
       mark_transcribed(dedup_key)
-      store_transcription_meta(chat_id, bot_msg_id, file_id, text)
+
+      formatted = auto_format(whisper, telegram, chat_id, bot_msg_id, text)
+      store_transcription_meta(chat_id, bot_msg_id, file_id, formatted)
       Bot::Stats.record_success!
 
       elapsed = Process.clock_gettime(Process::CLOCK_MONOTONIC) - job_start
@@ -74,6 +76,23 @@ module Jobs
     end
 
     private
+
+    def auto_format(whisper, telegram, chat_id, bot_msg_id, text)
+      Sidekiq.logger.info("[job] Formatting transcription via LLM...")
+      formatted = whisper.format_transcription(text)
+
+      if formatted && formatted != text
+        Sidekiq.logger.info("[job] Editing message with formatted text (#{formatted.length} chars)")
+        telegram.edit_message_text(chat_id: chat_id, message_id: bot_msg_id, text: formatted)
+        formatted
+      else
+        Sidekiq.logger.info("[job] Formatting produced no changes, keeping original")
+        text
+      end
+    rescue => e
+      Sidekiq.logger.error("[job] Auto-format failed (non-fatal): #{e.class}: #{e.message}")
+      text
+    end
 
     def already_transcribed?(key)
       Sidekiq.redis { |c| c.call("EXISTS", key) == 1 }

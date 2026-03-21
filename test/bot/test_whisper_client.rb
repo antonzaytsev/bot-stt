@@ -36,7 +36,7 @@ class TestWhisperClient < Minitest::Test
 
     assert_requested(:post, WHISPER_URL) { |req|
       req.headers["Content-Type"].include?("multipart/form-data") &&
-        req.body.include?("whisper-1") &&
+        req.body.include?("gpt-4o-transcribe") &&
         req.body.include?("audio-bytes")
     }
   end
