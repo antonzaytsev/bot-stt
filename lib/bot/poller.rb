@@ -8,21 +8,21 @@ require_relative "update_handler"
 module Bot
   class Poller
     POLL_TIMEOUT = 30
+    RECONNECT_INTERVAL = 60
 
     def initialize
       @telegram = TelegramClient.new
       @offset = nil
       @running = true
+      @connected = false
       @logger = Logger.new($stdout)
       @logger.formatter = proc { |severity, time, _, msg| "#{time.utc.iso8601} #{severity} [poller] #{msg}\n" }
     end
 
     def run
       @logger.info("Starting poller...")
-      @telegram.delete_webhook
-      @logger.info("Webhook cleared, polling for updates")
-      register_commands
-      notify_admin("Bot started")
+      establish_connection
+      notify_admin("Bot started") if @connected
 
       trap("INT") { @running = false; Thread.main.raise(Interrupt) }
       trap("TERM") { @running = false; Thread.main.raise(Interrupt) }
@@ -37,6 +37,17 @@ module Bot
     end
 
     private
+
+    def establish_connection
+      @telegram.delete_webhook
+      @logger.info("Webhook cleared, polling for updates")
+      register_commands
+      @connected = true
+      @logger.info("Connection established")
+    rescue => e
+      @connected = false
+      @logger.error("Failed to establish connection: #{e.class}: #{e.message}")
+    end
 
     def notify_admin(text)
       @telegram.send_message(chat_id: Config["ADMIN_CHAT_ID"], text: text)
@@ -53,10 +64,18 @@ module Bot
     end
 
     def poll_loop
+      wait_for_connection unless @connected
+
       while @running
         begin
           updates = @telegram.get_updates(offset: @offset, timeout: POLL_TIMEOUT)
           @logger.info("Received #{updates.size} update(s)") if updates.any?
+
+          unless @connected
+            @connected = true
+            @logger.info("Connection restored")
+            notify_admin("Bot reconnected")
+          end
 
           updates.each do |update|
             @offset = update["update_id"] + 1
@@ -67,8 +86,22 @@ module Bot
         rescue => e
           @logger.error("Polling error: #{e.class}: #{e.message}")
           @logger.error(e.backtrace&.first(5)&.join("\n"))
-          sleep 3 if @running
+
+          if @connected
+            @connected = false
+            @logger.warn("Connection lost, will retry every #{RECONNECT_INTERVAL}s")
+          end
+
+          wait_for_connection
         end
+      end
+    end
+
+    def wait_for_connection
+      while @running && !@connected
+        sleep RECONNECT_INTERVAL
+        @logger.info("Attempting to reconnect...")
+        establish_connection
       end
     end
 
