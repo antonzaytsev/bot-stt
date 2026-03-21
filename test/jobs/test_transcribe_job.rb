@@ -28,49 +28,35 @@ class TestTranscribeJob < Minitest::Test
         "choices" => [{ "message" => { "content" => "Formatted text." } }]
       }))
 
-    stub_request(:post, "#{TELEGRAM_API}/editMessageText")
-      .to_return(status: 200, body: Oj.dump({ "ok" => true, "result" => {} }))
   end
 
-  def test_happy_path_transcribes_and_replies
+  def test_happy_path_transcribes_formats_and_replies
     Jobs::TranscribeJob.new.perform(-1001234, 42, "file_abc")
 
     assert_requested(:post, "#{TELEGRAM_API}/getFile")
     assert_requested(:get, "https://api.telegram.org/file/bottest-bot-token/voice/file.ogg")
     assert_requested(:post, "https://api.openai.com/v1/audio/transcriptions")
+    assert_requested(:post, "https://api.openai.com/v1/chat/completions")
     assert_requested(:post, "#{TELEGRAM_API}/sendMessage") { |req|
       body = Oj.load(req.body)
-      body["text"] == "Transcribed text" &&
+      body["text"] == "Formatted text." &&
         body["chat_id"] == -1001234 &&
         body["reply_to_message_id"] == 42
-    }
-    assert_requested(:post, "https://api.openai.com/v1/chat/completions")
-    assert_requested(:post, "#{TELEGRAM_API}/editMessageText") { |req|
-      body = Oj.load(req.body)
-      body["text"] == "Formatted text." && body["message_id"] == 100
     }
     assert_equal 1, Bot::Stats.processed
     assert_equal 0, Bot::Stats.failed
   end
 
-  def test_auto_format_skips_edit_when_text_unchanged
-    stub_request(:post, "https://api.openai.com/v1/chat/completions")
-      .to_return(status: 200, body: Oj.dump({
-        "choices" => [{ "message" => { "content" => "Transcribed text" } }]
-      }))
-
-    Jobs::TranscribeJob.new.perform(-1001234, 42, "file_abc")
-
-    assert_not_requested(:post, "#{TELEGRAM_API}/editMessageText")
-  end
-
-  def test_auto_format_failure_is_non_fatal
+  def test_sends_raw_text_when_formatting_fails
     stub_request(:post, "https://api.openai.com/v1/chat/completions")
       .to_return(status: 500, body: Oj.dump({ "error" => { "message" => "LLM error" } }))
 
     Jobs::TranscribeJob.new.perform(-1001234, 42, "file_abc")
 
-    assert_not_requested(:post, "#{TELEGRAM_API}/editMessageText")
+    assert_requested(:post, "#{TELEGRAM_API}/sendMessage") { |req|
+      body = Oj.load(req.body)
+      body["text"] == "Transcribed text" && body["reply_to_message_id"] == 42
+    }
     assert_equal 1, Bot::Stats.processed
   end
 

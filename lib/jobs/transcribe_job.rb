@@ -52,15 +52,17 @@ module Jobs
       text = whisper.transcribe(audio_data)
       Sidekiq.logger.info("[job] Whisper response (#{text.length} chars): #{text[0..100]}...")
 
+      Sidekiq.logger.info("[job] Formatting transcription via LLM...")
+      final_text = format_transcription(whisper, text)
+      Sidekiq.logger.info("[job] Final text (#{final_text.length} chars): #{final_text[0..100]}...")
+
       Sidekiq.logger.info("[job] Sending reply to chat=#{chat_id} reply_to=#{message_id}")
-      sent = telegram.reply_to_message(chat_id: chat_id, message_id: message_id, text: text)
+      sent = telegram.reply_to_message(chat_id: chat_id, message_id: message_id, text: final_text)
       bot_msg_id = sent["message_id"]
       Sidekiq.logger.info("[job] Bot reply sent as msg=#{bot_msg_id}")
 
       mark_transcribed(dedup_key)
-
-      formatted = auto_format(whisper, telegram, chat_id, bot_msg_id, text)
-      store_transcription_meta(chat_id, bot_msg_id, file_id, formatted)
+      store_transcription_meta(chat_id, bot_msg_id, file_id, final_text)
       Bot::Stats.record_success!
 
       elapsed = Process.clock_gettime(Process::CLOCK_MONOTONIC) - job_start
@@ -77,20 +79,11 @@ module Jobs
 
     private
 
-    def auto_format(whisper, telegram, chat_id, bot_msg_id, text)
-      Sidekiq.logger.info("[job] Formatting transcription via LLM...")
+    def format_transcription(whisper, text)
       formatted = whisper.format_transcription(text)
-
-      if formatted && formatted != text
-        Sidekiq.logger.info("[job] Editing message with formatted text (#{formatted.length} chars)")
-        telegram.edit_message_text(chat_id: chat_id, message_id: bot_msg_id, text: formatted)
-        formatted
-      else
-        Sidekiq.logger.info("[job] Formatting produced no changes, keeping original")
-        text
-      end
+      formatted && !formatted.empty? ? formatted : text
     rescue => e
-      Sidekiq.logger.error("[job] Auto-format failed (non-fatal): #{e.class}: #{e.message}")
+      Sidekiq.logger.error("[job] Formatting failed, using raw transcription: #{e.class}: #{e.message}")
       text
     end
 
