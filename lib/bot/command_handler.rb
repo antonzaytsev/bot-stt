@@ -28,7 +28,7 @@ module Bot
       { command: "settings", description: "View bot settings" },
       { command: "set", description: "Change a setting — /set <name> on|off" },
       { command: "help", description: "List available commands" },
-      { command: "summarize", description: "Summarize a Yandex Music podcast — /summarize <url>" }
+      { command: "summarize", description: "Summarize a podcast — /summarize <url>" }
     ].freeze
 
     def self.call(command:, args: [], user_id:, chat_id:)
@@ -71,7 +71,7 @@ module Bot
         "/settings — view bot settings",
         "/set <name> on|off — change a setting",
         "/help — this message",
-        "/summarize <url> — summarize a Yandex Music podcast",
+        "/summarize <url> — summarize a podcast",
         ""
       ]
       Settings.all.each do |key, value|
@@ -156,7 +156,7 @@ module Bot
         "/settings — view bot settings",
         "/set <name> on|off — change a setting",
         "/help — this message",
-        "/summarize <url> — summarize a Yandex Music podcast"
+        "/summarize <url> — summarize a podcast"
       ]
       reply(lines.join("\n"))
     end
@@ -169,7 +169,7 @@ module Bot
 
       url = @args.first
       unless Bot::AudioDownloader.valid_url?(url)
-        reply("Only Yandex Music URLs are supported.\nExample: /summarize https://music.yandex.ru/album/123/track/456")
+        reply("Please provide a valid URL.\nExample: /summarize https://podcasts.apple.com/...")
         return
       end
 

@@ -158,16 +158,16 @@ class TestCommandHandler < Minitest::Test
     }
   end
 
-  def test_summarize_rejects_non_yandex_url
+  def test_summarize_rejects_non_url
     Bot::CommandHandler.call(
       command: "/summarize",
-      args: ["https://example.com/podcast"],
+      args: ["not-a-url"],
       user_id: ADMIN_ID, chat_id: ADMIN_ID
     )
 
     assert_requested(:post, "#{TELEGRAM_API}/sendMessage") { |req|
       body = Oj.load(req.body)
-      body["text"].include?("Yandex Music")
+      body["text"].include?("valid URL")
     }
   end
 

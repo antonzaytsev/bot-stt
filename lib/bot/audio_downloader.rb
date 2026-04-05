@@ -7,7 +7,7 @@ require "logger"
 
 module Bot
   class AudioDownloader
-    YANDEX_MUSIC_RE = %r{\Ahttps?://music\.yandex\.(ru|com)/}i
+    URL_RE = %r{\Ahttps?://}i
 
     def initialize
       @logger = Logger.new($stdout)
@@ -15,7 +15,7 @@ module Bot
     end
 
     def self.valid_url?(url)
-      url.match?(YANDEX_MUSIC_RE)
+      url.match?(URL_RE)
     end
 
     def download(url, output_dir:)
