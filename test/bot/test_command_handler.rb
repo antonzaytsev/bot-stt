@@ -136,4 +136,51 @@ class TestCommandHandler < Minitest::Test
       body["text"].include?("/settings") && body["text"].include?("/set")
     }
   end
+
+  def test_summarize_enqueues_podcast_job_for_valid_url
+    require_relative "../../lib/jobs/podcast_job"
+    Sidekiq::Worker.clear_all
+
+    Bot::CommandHandler.call(
+      command: "/summarize",
+      args: ["https://music.yandex.ru/album/9294155/track/12345"],
+      user_id: ADMIN_ID, chat_id: ADMIN_ID
+    )
+
+    assert_equal 1, Jobs::PodcastJob.jobs.size
+    job = Jobs::PodcastJob.jobs.first
+    assert_equal ADMIN_ID, job["args"][0]
+    assert_equal "https://music.yandex.ru/album/9294155/track/12345", job["args"][1]
+
+    assert_requested(:post, "#{TELEGRAM_API}/sendMessage") { |req|
+      body = Oj.load(req.body)
+      body["text"].include?("queued")
+    }
+  end
+
+  def test_summarize_rejects_non_yandex_url
+    Bot::CommandHandler.call(
+      command: "/summarize",
+      args: ["https://example.com/podcast"],
+      user_id: ADMIN_ID, chat_id: ADMIN_ID
+    )
+
+    assert_requested(:post, "#{TELEGRAM_API}/sendMessage") { |req|
+      body = Oj.load(req.body)
+      body["text"].include?("Yandex Music")
+    }
+  end
+
+  def test_summarize_without_args_shows_usage
+    Bot::CommandHandler.call(
+      command: "/summarize",
+      args: [],
+      user_id: ADMIN_ID, chat_id: ADMIN_ID
+    )
+
+    assert_requested(:post, "#{TELEGRAM_API}/sendMessage") { |req|
+      body = Oj.load(req.body)
+      body["text"].include?("Usage")
+    }
+  end
 end

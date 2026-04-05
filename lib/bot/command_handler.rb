@@ -4,6 +4,8 @@ require "sidekiq/api"
 require_relative "telegram_client"
 require_relative "stats"
 require_relative "settings"
+require_relative "audio_downloader"
+require_relative "../jobs/podcast_job"
 
 module Bot
   class CommandHandler
@@ -14,7 +16,8 @@ module Bot
       "/stats" => :cmd_stats,
       "/settings" => :cmd_settings,
       "/set" => :cmd_set,
-      "/help" => :cmd_help
+      "/help" => :cmd_help,
+      "/summarize" => :cmd_summarize
     }.freeze
 
     MENU = [
@@ -24,7 +27,8 @@ module Bot
       { command: "stats", description: "Processed/failed counts today" },
       { command: "settings", description: "View bot settings" },
       { command: "set", description: "Change a setting — /set <name> on|off" },
-      { command: "help", description: "List available commands" }
+      { command: "help", description: "List available commands" },
+      { command: "summarize", description: "Summarize a Yandex Music podcast — /summarize <url>" }
     ].freeze
 
     def self.call(command:, args: [], user_id:, chat_id:)
@@ -67,6 +71,7 @@ module Bot
         "/settings — view bot settings",
         "/set <name> on|off — change a setting",
         "/help — this message",
+        "/summarize <url> — summarize a Yandex Music podcast",
         ""
       ]
       Settings.all.each do |key, value|
@@ -150,9 +155,26 @@ module Bot
         "/stats — processed/failed counts today",
         "/settings — view bot settings",
         "/set <name> on|off — change a setting",
-        "/help — this message"
+        "/help — this message",
+        "/summarize <url> — summarize a Yandex Music podcast"
       ]
       reply(lines.join("\n"))
+    end
+
+    def cmd_summarize
+      if @args.empty?
+        reply("Usage: /summarize <yandex-music-url>")
+        return
+      end
+
+      url = @args.first
+      unless Bot::AudioDownloader.valid_url?(url)
+        reply("Only Yandex Music URLs are supported.\nExample: /summarize https://music.yandex.ru/album/123/track/456")
+        return
+      end
+
+      Jobs::PodcastJob.perform_async(@chat_id, url)
+      reply("Podcast summarization queued.")
     end
   end
 end
