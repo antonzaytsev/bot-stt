@@ -56,4 +56,20 @@ class TestWhisperClient < Minitest::Test
     error = assert_raises(RuntimeError) { @client.transcribe("data") }
     assert_match(/Internal error/, error.message)
   end
+
+  def test_summarize_podcast_sends_system_prompt_and_returns_content
+    stub_request(:post, "https://api.openai.com/v1/chat/completions")
+      .to_return(status: 200, body: Oj.dump({
+        "choices" => [{ "message" => { "content" => "- Point one\n- Point two" } }]
+      }))
+
+    result = Bot::WhisperClient.new.summarize_podcast("Full transcript text here...")
+
+    assert_equal "- Point one\n- Point two", result
+    assert_requested(:post, "https://api.openai.com/v1/chat/completions") { |req|
+      body = Oj.load(req.body)
+      body["messages"][0]["content"].include?("bullet") &&
+        body["messages"][1]["content"].include?("Full transcript text here")
+    }
+  end
 end

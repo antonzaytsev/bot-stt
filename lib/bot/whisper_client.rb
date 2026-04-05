@@ -62,6 +62,18 @@ module Bot
       )
     end
 
+    def summarize_podcast(transcript)
+      chat_completion(
+        "You are a podcast analyst. Given a full transcript of a podcast episode, produce a concise summary as bullet points.\n" \
+        "- Extract the key ideas, insights, and takeaways\n" \
+        "- Group related points under short topic headers if the episode covers multiple subjects\n" \
+        "- Keep the language matching the transcript (Russian if Russian, etc.)\n" \
+        "- Use English terms as-is when they appear in the original\n" \
+        "- Output ONLY the bullet points, nothing else",
+        transcript
+      )
+    end
+
     private
 
     def chat_completion(system_prompt, user_content)
