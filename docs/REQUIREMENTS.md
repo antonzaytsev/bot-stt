@@ -22,7 +22,8 @@ Before setup, the following must be obtained:
 - The bot is added to a single private Telegram channel (group/supergroup).
 - When any user in the channel sends a voice message, the bot picks it up and transcribes it.
 - The bot replies **to the original voice message** with the transcribed text.
-- Only voice messages are processed. Video notes, audio files, and other media are ignored.
+- Audio uploads are processed too — Telegram `audio` messages and audio files sent as `document`. Long uploads are split into chunks before transcription, and a transcript that does not fit into a Telegram message is returned as a `.txt` file.
+- Video notes and other media are ignored.
 - All users in the channel are treated equally — no access control or whitelisting.
 
 ### Bot Commands (Telegram Interface)

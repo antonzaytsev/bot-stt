@@ -3,6 +3,7 @@
 require "net/http"
 require "uri"
 require "oj"
+require "securerandom"
 
 module Bot
   class TelegramClient
@@ -40,6 +41,27 @@ module Bot
       post("editMessageText", **params)
     end
 
+    def send_document(chat_id:, filename:, data:, caption: nil, reply_to_message_id: nil)
+      fields = { "chat_id" => chat_id.to_s }
+      fields["caption"] = caption if caption
+      fields["reply_to_message_id"] = reply_to_message_id.to_s if reply_to_message_id
+
+      boundary = "----FormBoundary#{SecureRandom.hex(16)}"
+      uri = URI("#{BASE_URL}/bot#{@token}/sendDocument")
+      request = Net::HTTP::Post.new(uri)
+      request["Content-Type"] = "multipart/form-data; boundary=#{boundary}"
+      request.body = build_multipart_body(boundary, fields, filename, data)
+
+      response = Net::HTTP.start(uri.hostname, uri.port, use_ssl: true, open_timeout: 10, read_timeout: 120) do |http|
+        http.request(request)
+      end
+
+      body = Oj.load(response.body)
+      raise "Telegram API error: #{body["description"]}" unless body["ok"]
+
+      body["result"]
+    end
+
     def set_my_commands(commands)
       post("setMyCommands", commands: commands)
     end
@@ -57,6 +79,18 @@ module Bot
     end
 
     private
+
+    def build_multipart_body(boundary, fields, filename, data)
+      body = +"".b
+      fields.each do |name, value|
+        body << "--#{boundary}\r\nContent-Disposition: form-data; name=\"#{name}\"\r\n\r\n#{value}\r\n".b
+      end
+      body << "--#{boundary}\r\nContent-Disposition: form-data; name=\"document\"; filename=\"#{filename}\"\r\n".b
+      body << "Content-Type: application/octet-stream\r\n\r\n".b
+      body << data.b
+      body << "\r\n--#{boundary}--\r\n".b
+      body
+    end
 
     def post(method, **params)
       uri = URI("#{BASE_URL}/bot#{@token}/#{method}")

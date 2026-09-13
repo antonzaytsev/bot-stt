@@ -62,7 +62,10 @@ module Bot
 
     def cmd_start
       lines = [
-        "Voice-to-Text Bot",
+        "Speech-to-Text Bot",
+        "",
+        "Send a voice message or upload an audio file — the bot replies with the transcript,",
+        "as text or as a .txt file when it is too long for a message.",
         "",
         "Commands:",
         "/ping — liveness check",
@@ -149,6 +152,8 @@ module Bot
 
     def cmd_help
       lines = [
+        "Send a voice message or an audio file to get a transcript.",
+        "",
         "Available commands:",
         "/ping — liveness check",
         "/status — bot health, Redis, Sidekiq queue",

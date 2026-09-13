@@ -1,6 +1,6 @@
 # bot-stt
 
-Telegram bot that transcribes voice messages to text using OpenAI Whisper. Add it to a private channel — it listens for voice messages, transcribes them, and replies with the text. Managed entirely via Telegram commands, no web UI.
+Telegram bot that transcribes speech to text using OpenAI Whisper. Add it to a private channel — it listens for voice messages and audio uploads, transcribes them, and replies with the text. Managed entirely via Telegram commands, no web UI.
 
 Uses **long polling** — no public URL or webhook setup needed.
 
@@ -36,6 +36,16 @@ docker compose up
 ```
 
 This starts 4 services: **web** (health endpoint), **poller** (Telegram long polling), **worker** (Sidekiq), **redis**.
+
+## Audio Uploads
+
+Besides voice messages, the bot transcribes audio sent as a Telegram **audio** message or as a **document** (any `audio/*` file, or a file with an audio extension such as `.mp3`, `.m4a`, `.wav`, `.flac`, `.opus`).
+
+- Every upload is normalised with ffmpeg and split into 10-minute chunks, so any container format and length works.
+- The bot replies with a status message and edits it as it progresses.
+- Transcripts up to 3500 characters are returned as text; longer ones are sent back as a `.txt` file named after the upload.
+- Telegram bots can only download files up to 20 MB — larger uploads get a message saying so.
+- 👎 re-transcription is only available for voice messages, not for audio uploads.
 
 ## Bot Commands
 

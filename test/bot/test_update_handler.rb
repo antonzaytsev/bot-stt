@@ -46,6 +46,66 @@ class TestUpdateHandler < Minitest::Test
     assert_equal 0, Jobs::TranscribeJob.jobs.size
   end
 
+  def test_enqueues_audio_job_for_audio_message
+    payload = audio_payload(chat_id: ADMIN_ID, chat_type: "private", from_id: ADMIN_ID)
+
+    Bot::UpdateHandler.new(payload).call
+
+    assert_equal 1, Jobs::TranscribeAudioJob.jobs.size
+    assert_equal [ADMIN_ID, 42, "audio123", 180, "track.mp3", 2048], Jobs::TranscribeAudioJob.jobs.first["args"]
+  end
+
+  def test_enqueues_audio_job_for_audio_document
+    payload = document_payload(
+      chat_id: ADMIN_ID, chat_type: "private", from_id: ADMIN_ID,
+      mime_type: "audio/mpeg", file_name: "meeting.mp3"
+    )
+
+    Bot::UpdateHandler.new(payload).call
+
+    assert_equal 1, Jobs::TranscribeAudioJob.jobs.size
+    assert_equal [ADMIN_ID, 42, "doc123", nil, "meeting.mp3", 4096], Jobs::TranscribeAudioJob.jobs.first["args"]
+  end
+
+  def test_enqueues_audio_job_for_document_with_audio_extension_only
+    payload = document_payload(
+      chat_id: ADMIN_ID, chat_type: "private", from_id: ADMIN_ID,
+      mime_type: "application/octet-stream", file_name: "voice-memo.M4A"
+    )
+
+    Bot::UpdateHandler.new(payload).call
+
+    assert_equal 1, Jobs::TranscribeAudioJob.jobs.size
+  end
+
+  def test_ignores_non_audio_document
+    payload = document_payload(
+      chat_id: ADMIN_ID, chat_type: "private", from_id: ADMIN_ID,
+      mime_type: "application/pdf", file_name: "invoice.pdf"
+    )
+
+    Bot::UpdateHandler.new(payload).call
+
+    assert_equal 0, Jobs::TranscribeAudioJob.jobs.size
+  end
+
+  def test_enqueues_audio_job_in_allowed_group
+    ENV["ALLOWED_CHAT_ID"] = GROUP_ID.to_s
+    payload = audio_payload(chat_id: GROUP_ID, chat_type: "supergroup", from_id: 999)
+
+    Bot::UpdateHandler.new(payload).call
+
+    assert_equal 1, Jobs::TranscribeAudioJob.jobs.size
+  end
+
+  def test_ignores_audio_from_non_allowed_group
+    payload = audio_payload(chat_id: GROUP_ID, chat_type: "supergroup", from_id: 999)
+
+    Bot::UpdateHandler.new(payload).call
+
+    assert_equal 0, Jobs::TranscribeAudioJob.jobs.size
+  end
+
   def test_transcribe_request_via_reply_and_mention
     ENV["ALLOWED_CHAT_ID"] = GROUP_ID.to_s
     payload = transcribe_request_payload(
@@ -163,6 +223,36 @@ class TestUpdateHandler < Minitest::Test
         "chat" => { "id" => chat_id, "type" => chat_type },
         "from" => { "id" => from_id },
         "voice" => { "file_id" => "abc123", "duration" => 5 }
+      }
+    }
+  end
+
+  def audio_payload(chat_id:, chat_type:, from_id:)
+    {
+      "update_id" => 1,
+      "message" => {
+        "message_id" => 42,
+        "chat" => { "id" => chat_id, "type" => chat_type },
+        "from" => { "id" => from_id },
+        "audio" => {
+          "file_id" => "audio123", "duration" => 180,
+          "file_name" => "track.mp3", "file_size" => 2048
+        }
+      }
+    }
+  end
+
+  def document_payload(chat_id:, chat_type:, from_id:, mime_type:, file_name:)
+    {
+      "update_id" => 1,
+      "message" => {
+        "message_id" => 42,
+        "chat" => { "id" => chat_id, "type" => chat_type },
+        "from" => { "id" => from_id },
+        "document" => {
+          "file_id" => "doc123", "mime_type" => mime_type,
+          "file_name" => file_name, "file_size" => 4096
+        }
       }
     }
   end

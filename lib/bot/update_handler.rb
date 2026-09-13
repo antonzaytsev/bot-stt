@@ -2,11 +2,15 @@
 
 require "logger"
 require_relative "../jobs/transcribe_job"
+require_relative "../jobs/transcribe_audio_job"
 require_relative "../jobs/improve_transcription_job"
 
 module Bot
   class UpdateHandler
     THUMBS_DOWN = "\u{1F44E}"
+
+    # Used when a client uploads audio as a document without an audio mime type.
+    AUDIO_EXTENSIONS = %w[mp3 m4a mp4a wav ogg oga opus flac aac wma amr aiff aif].freeze
 
     def initialize(payload)
       @payload = payload
@@ -40,6 +44,14 @@ module Bot
           handle_voice
         else
           @logger.info("Voice in disallowed chat, skipping")
+        end
+      elsif audio_upload?
+        @logger.info("Audio upload detected")
+        if allowed_voice_chat?
+          @logger.info("Audio in allowed chat -> handle_audio")
+          handle_audio
+        else
+          @logger.info("Audio in disallowed chat, skipping")
         end
       elsif bot_command?
         @logger.info("Bot command detected: #{@message["text"]}")
@@ -91,6 +103,19 @@ module Bot
       @message.key?("voice")
     end
 
+    def audio_upload?
+      @message.key?("audio") || audio_document?
+    end
+
+    def audio_document?
+      document = @message["document"]
+      return false unless document
+      return true if document["mime_type"].to_s.start_with?("audio/")
+
+      extension = File.extname(document["file_name"].to_s).delete_prefix(".").downcase
+      AUDIO_EXTENSIONS.include?(extension)
+    end
+
     def bot_command?
       entities = @message["entities"] || []
       entities.any? { |e| e["type"] == "bot_command" }
@@ -104,6 +129,17 @@ module Bot
       duration = voice["duration"]
       @logger.info("Enqueuing TranscribeJob: chat=#{chat_id} msg=#{msg_id} file=#{file_id} duration=#{duration}")
       Jobs::TranscribeJob.perform_async(chat_id, msg_id, file_id, duration)
+    end
+
+    def handle_audio
+      media = @message["audio"] || @message["document"]
+      chat_id = @message["chat"]["id"]
+      msg_id = @message["message_id"]
+      file_id = media["file_id"]
+      @logger.info("Enqueuing TranscribeAudioJob: chat=#{chat_id} msg=#{msg_id} file=#{file_id} name=#{media["file_name"]} size=#{media["file_size"]}")
+      Jobs::TranscribeAudioJob.perform_async(
+        chat_id, msg_id, file_id, media["duration"], media["file_name"], media["file_size"]
+      )
     end
 
     def handle_command
