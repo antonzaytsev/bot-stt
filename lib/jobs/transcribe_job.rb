@@ -4,6 +4,7 @@ require "sidekiq"
 require "oj"
 require_relative "../bot/telegram_client"
 require_relative "../bot/whisper_client"
+require_relative "../bot/transcript_delivery"
 require_relative "../bot/stats"
 require_relative "../bot/settings"
 
@@ -57,12 +58,14 @@ module Jobs
       Sidekiq.logger.info("[job] Final text (#{final_text.length} chars): #{final_text[0..100]}...")
 
       Sidekiq.logger.info("[job] Sending reply to chat=#{chat_id} reply_to=#{message_id}")
-      sent = telegram.reply_to_message(chat_id: chat_id, message_id: message_id, text: final_text)
-      bot_msg_id = sent["message_id"]
+      delivered = Bot::TranscriptDelivery.new(
+        telegram: telegram, chat_id: chat_id, reply_to_message_id: message_id
+      ).call(text: final_text, source: "voice", base_name: "voice")
+      bot_msg_id = delivered[:anchor_msg_id]
       Sidekiq.logger.info("[job] Bot reply sent as msg=#{bot_msg_id}")
 
       mark_transcribed(dedup_key)
-      store_transcription_meta(chat_id, bot_msg_id, file_id, final_text)
+      store_transcription_meta(chat_id, bot_msg_id, file_id, final_text, delivered)
       Bot::Stats.record_success!
 
       elapsed = Process.clock_gettime(Process::CLOCK_MONOTONIC) - job_start
@@ -95,9 +98,15 @@ module Jobs
       Sidekiq.redis { |c| c.call("SET", key, "1", "EX", DEDUP_TTL) }
     end
 
-    def store_transcription_meta(chat_id, bot_msg_id, file_id, text)
+    # The 👎 flow edits this message later, so it has to know what kind of
+    # message it is: a document cannot be edited as text, and an edit that omits
+    # the keyboard removes the Summarize button.
+    def store_transcription_meta(chat_id, bot_msg_id, file_id, text, delivered)
       key = "transcription_meta:#{chat_id}:#{bot_msg_id}"
-      data = Oj.dump({ "file_id" => file_id, "text" => text })
+      data = Oj.dump({
+        "file_id" => file_id, "text" => text,
+        "as_file" => delivered[:as_file], "token" => (delivered[:token] if delivered[:button])
+      })
       Sidekiq.redis { |c| c.call("SET", key, data, "EX", DEDUP_TTL) }
     end
 

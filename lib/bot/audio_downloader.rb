@@ -4,6 +4,7 @@ require "open3"
 require "fileutils"
 require "tmpdir"
 require "logger"
+require "oj"
 
 module Bot
   class AudioDownloader
@@ -16,6 +17,19 @@ module Bot
 
     def self.valid_url?(url)
       url.match?(URL_RE)
+    end
+
+    # Metadata only — no media is fetched, so this is cheap enough to run before
+    # deciding whether the job is worth starting at all.
+    def probe(url)
+      output = run_command(
+        "yt-dlp", "-J", "--no-warnings", "--no-playlist", "--flat-playlist", "--skip-download", url
+      )
+      # Warnings share the stream with the payload; the JSON is the one line that is a JSON object.
+      json = output.lines.reverse.find { |line| line.start_with?("{") }
+      raise "yt-dlp returned no metadata" unless json
+
+      Oj.load(json)
     end
 
     def download(url, output_dir:)

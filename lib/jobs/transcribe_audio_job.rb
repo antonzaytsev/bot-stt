@@ -6,6 +6,8 @@ require "tmpdir"
 require_relative "../bot/telegram_client"
 require_relative "../bot/whisper_client"
 require_relative "../bot/audio_downloader"
+require_relative "../bot/chunked_transcriber"
+require_relative "../bot/transcript_delivery"
 require_relative "../bot/stats"
 require_relative "../bot/settings"
 
@@ -21,7 +23,6 @@ module Jobs
 
     DEDUP_TTL = 30 * 24 * 3600 # 30 days
     CHUNK_SECONDS = 600
-    MAX_TEXT_CHARS = 3500 # Telegram caps messages at 4096
     MAX_DOWNLOAD_BYTES = 20 * 1024 * 1024 # Telegram bot API download limit
     WHISPER_COST_PER_MINUTE = 0.006
 
@@ -73,8 +74,8 @@ module Jobs
         chunks = self.class.make_downloader.split_audio(input_path, chunk_seconds: CHUNK_SECONDS, output_dir: tmp_dir)
         Sidekiq.logger.info("[audio] Split into #{chunks.length} chunk(s)")
 
-        raw_parts = transcribe_chunks(chunks)
-        final_text = format_parts(raw_parts)
+        transcriber = Bot::ChunkedTranscriber.new(whisper: @whisper, progress: method(:update_status))
+        final_text = transcriber.call(chunks)[:text]
         Sidekiq.logger.info("[audio] Final text (#{final_text.length} chars): #{final_text[0..100]}...")
 
         deliver(final_text, file_name)
@@ -112,62 +113,10 @@ module Jobs
       input_path
     end
 
-    # Whisper only accepts a handful of container formats and caps upload size,
-    # so every upload goes through ffmpeg — it normalises to opus/ogg and splits
-    # long recordings into chunks we can transcribe sequentially.
-    def transcribe_chunks(chunks)
-      chunks.each_with_index.map do |chunk_path, i|
-        update_status("Transcribing chunk #{i + 1}/#{chunks.length}...") if chunks.length > 1
-        audio_data = File.read(chunk_path, mode: "rb")
-        text = @whisper.transcribe(audio_data, filename: File.basename(chunk_path), prompt: tail_context(@last_part))
-        @last_part = text
-        text
-      end
-    end
-
-    def tail_context(text)
-      return nil if text.nil? || text.empty?
-
-      text.length > 200 ? text[-200..] : text
-    end
-
-    # Formatted per chunk so a long recording never hits the LLM output limit.
-    def format_parts(parts)
-      parts.each_with_index.map do |text, i|
-        update_status("Formatting #{i + 1}/#{parts.length}...") if parts.length > 1
-        format_transcription(text)
-      end.join("\n\n")
-    end
-
-    def format_transcription(text)
-      formatted = @whisper.format_transcription(text)
-      formatted && !formatted.empty? ? formatted : text
-    rescue => e
-      Sidekiq.logger.error("[audio] Formatting failed, using raw transcription: #{e.class}: #{e.message}")
-      text
-    end
-
     def deliver(text, file_name)
-      if text.length <= MAX_TEXT_CHARS
-        @telegram.edit_message_text(chat_id: @chat_id, message_id: @status_msg_id, text: text)
-        return
-      end
-
-      Sidekiq.logger.info("[audio] Transcript too long for a message (#{text.length} chars), sending as file")
-      @telegram.send_document(
-        chat_id: @chat_id,
-        filename: transcript_filename(file_name),
-        data: text,
-        caption: "Transcript (#{text.length} characters)",
-        reply_to_message_id: @message_id
-      )
-      update_status("Transcript is #{text.length} characters — sent as a file.")
-    end
-
-    def transcript_filename(file_name)
-      base = File.basename(file_name.to_s, ".*").strip
-      base = "transcript" if base.empty?
-      "#{base}.txt"
+      Bot::TranscriptDelivery.new(
+        telegram: @telegram, chat_id: @chat_id, reply_to_message_id: @message_id
+      ).call(text: text, source: "audio", status_msg_id: @status_msg_id, base_name: file_name)
     end
 
     def extension_for(file_name, telegram_path)

@@ -137,8 +137,8 @@ class TestCommandHandler < Minitest::Test
     }
   end
 
-  def test_summarize_enqueues_podcast_job_for_valid_url
-    require_relative "../../lib/jobs/podcast_job"
+  def test_summarize_enqueues_media_job_with_auto_summarize
+    require_relative "../../lib/jobs/transcribe_media_job"
     Sidekiq::Worker.clear_all
 
     Bot::CommandHandler.call(
@@ -147,14 +147,23 @@ class TestCommandHandler < Minitest::Test
       user_id: ADMIN_ID, chat_id: ADMIN_ID
     )
 
-    assert_equal 1, Jobs::PodcastJob.jobs.size
-    job = Jobs::PodcastJob.jobs.first
+    assert_equal 1, Jobs::TranscribeMediaJob.jobs.size
+    job = Jobs::TranscribeMediaJob.jobs.first
     assert_equal ADMIN_ID, job["args"][0]
-    assert_equal "https://music.yandex.ru/album/9294155/track/12345", job["args"][1]
+    assert_nil job["args"][1]
+    assert_equal "https://music.yandex.ru/album/9294155/track/12345", job["args"][2]
+    assert_equal true, job["args"][3]
+  end
 
+  def test_summarize_rejects_a_non_url
+    require_relative "../../lib/jobs/transcribe_media_job"
+    Sidekiq::Worker.clear_all
+
+    Bot::CommandHandler.call(command: "/summarize", args: ["not-a-url"], user_id: ADMIN_ID, chat_id: ADMIN_ID)
+
+    assert_equal 0, Jobs::TranscribeMediaJob.jobs.size
     assert_requested(:post, "#{TELEGRAM_API}/sendMessage") { |req|
-      body = Oj.load(req.body)
-      body["text"].include?("queued")
+      Oj.load(req.body)["text"].include?("valid URL")
     }
   end
 

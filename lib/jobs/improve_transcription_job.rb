@@ -4,6 +4,8 @@ require "sidekiq"
 require "oj"
 require_relative "../bot/telegram_client"
 require_relative "../bot/whisper_client"
+require_relative "../bot/transcript_delivery"
+require_relative "../bot/transcript_store"
 
 module Jobs
   class ImproveTranscriptionJob
@@ -52,10 +54,10 @@ module Jobs
         return
       end
 
-      Sidekiq.logger.info("[improve] Editing message #{bot_message_id}")
-      telegram.edit_message_text(chat_id: chat_id, message_id: bot_message_id, text: improved)
+      deliver(telegram, chat_id, bot_message_id, meta, improved)
 
-      Sidekiq.redis { |c| c.call("SET", meta_key, Oj.dump({ "file_id" => file_id, "text" => improved }), "EX", 30 * 24 * 3600) }
+      Bot::TranscriptStore.update_text(meta["token"], improved) if meta["token"]
+      Sidekiq.redis { |c| c.call("SET", meta_key, Oj.dump(meta.merge("text" => improved)), "EX", 30 * 24 * 3600) }
       Sidekiq.redis { |c| c.call("SET", cooldown_key, "1", "EX", IMPROVE_COOLDOWN) }
 
       Sidekiq.logger.info("[improve] DONE: chat=#{chat_id} bot_msg=#{bot_message_id}")
@@ -63,6 +65,28 @@ module Jobs
       Sidekiq.logger.error("[improve] FAILED: #{e.class}: #{e.message}")
       Sidekiq.logger.error("[improve] #{e.backtrace&.first(5)&.join("\n")}")
       raise
+    end
+
+    private
+
+    # A long transcript was delivered as a .txt document, and Telegram has no
+    # text to edit there — the improved version comes back as a new file.
+    def deliver(telegram, chat_id, bot_message_id, meta, improved)
+      if meta["as_file"]
+        Sidekiq.logger.info("[improve] Original was a file, sending an improved file")
+        telegram.send_document(
+          chat_id: chat_id, filename: "transcript-improved.txt", data: improved,
+          caption: "Improved transcript (#{improved.length} characters)",
+          reply_to_message_id: bot_message_id
+        )
+        return
+      end
+
+      Sidekiq.logger.info("[improve] Editing message #{bot_message_id}")
+      markup = meta["token"] ? Bot::TranscriptDelivery.summary_markup(meta["token"]) : nil
+      telegram.edit_message_text(
+        chat_id: chat_id, message_id: bot_message_id, text: improved, reply_markup: markup
+      )
     end
   end
 end

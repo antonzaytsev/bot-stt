@@ -5,7 +5,7 @@ require_relative "telegram_client"
 require_relative "stats"
 require_relative "settings"
 require_relative "audio_downloader"
-require_relative "../jobs/podcast_job"
+require_relative "../jobs/transcribe_media_job"
 
 module Bot
   class CommandHandler
@@ -28,7 +28,7 @@ module Bot
       { command: "settings", description: "View bot settings" },
       { command: "set", description: "Change a setting — /set <name> on|off" },
       { command: "help", description: "List available commands" },
-      { command: "summarize", description: "Summarize a podcast — /summarize <url>" }
+      { command: "summarize", description: "Transcribe and summarize media — /summarize <url>" }
     ].freeze
 
     def self.call(command:, args: [], user_id:, chat_id:)
@@ -66,6 +66,7 @@ module Bot
         "",
         "Send a voice message or upload an audio file — the bot replies with the transcript,",
         "as text or as a .txt file when it is too long for a message.",
+        "Send a YouTube link and the bot transcribes its audio and offers a summary.",
         "",
         "Commands:",
         "/ping — liveness check",
@@ -74,7 +75,7 @@ module Bot
         "/settings — view bot settings",
         "/set <name> on|off — change a setting",
         "/help — this message",
-        "/summarize <url> — summarize a podcast",
+        "/summarize <url> — transcribe and summarize media",
         ""
       ]
       Settings.all.each do |key, value|
@@ -152,7 +153,7 @@ module Bot
 
     def cmd_help
       lines = [
-        "Send a voice message or an audio file to get a transcript.",
+        "Send a voice message, an audio file or a YouTube link to get a transcript.",
         "",
         "Available commands:",
         "/ping — liveness check",
@@ -161,14 +162,14 @@ module Bot
         "/settings — view bot settings",
         "/set <name> on|off — change a setting",
         "/help — this message",
-        "/summarize <url> — summarize a podcast"
+        "/summarize <url> — transcribe and summarize media"
       ]
       reply(lines.join("\n"))
     end
 
     def cmd_summarize
       if @args.empty?
-        reply("Usage: /summarize <yandex-music-url>")
+        reply("Usage: /summarize <url>")
         return
       end
 
@@ -178,8 +179,8 @@ module Bot
         return
       end
 
-      Jobs::PodcastJob.perform_async(@chat_id, url)
-      reply("Podcast summarization queued.")
+      # Same pipeline a bare link takes, only it summarizes without being asked.
+      Jobs::TranscribeMediaJob.perform_async(@chat_id, nil, url, true)
     end
   end
 end

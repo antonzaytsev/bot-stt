@@ -14,7 +14,7 @@ module Bot
     end
 
     def get_updates(offset: nil, timeout: 30)
-      params = { timeout: timeout, allowed_updates: ["message", "message_reaction"] }
+      params = { timeout: timeout, allowed_updates: ["message", "message_reaction", "callback_query"] }
       params[:offset] = offset if offset
       post("getUpdates", **params)
     end
@@ -23,28 +23,48 @@ module Bot
       post("deleteWebhook")
     end
 
-    def send_message(chat_id:, text:, parse_mode: nil)
+    def send_message(chat_id:, text:, parse_mode: nil, reply_markup: nil)
       params = { chat_id: chat_id, text: text }
       params[:parse_mode] = parse_mode if parse_mode
+      params[:reply_markup] = reply_markup if reply_markup
       post("sendMessage", **params)
     end
 
-    def reply_to_message(chat_id:, message_id:, text:, parse_mode: nil)
+    def reply_to_message(chat_id:, message_id:, text:, parse_mode: nil, reply_markup: nil)
       params = { chat_id: chat_id, reply_to_message_id: message_id, text: text }
       params[:parse_mode] = parse_mode if parse_mode
+      params[:reply_markup] = reply_markup if reply_markup
       post("sendMessage", **params)
     end
 
-    def edit_message_text(chat_id:, message_id:, text:, parse_mode: nil)
+    def edit_message_text(chat_id:, message_id:, text:, parse_mode: nil, reply_markup: nil)
       params = { chat_id: chat_id, message_id: message_id, text: text }
       params[:parse_mode] = parse_mode if parse_mode
+      params[:reply_markup] = reply_markup if reply_markup
       post("editMessageText", **params)
     end
 
-    def send_document(chat_id:, filename:, data:, caption: nil, reply_to_message_id: nil)
+    # Passing no markup clears the buttons on a message.
+    def edit_message_reply_markup(chat_id:, message_id:, reply_markup: nil)
+      params = { chat_id: chat_id, message_id: message_id }
+      params[:reply_markup] = reply_markup if reply_markup
+      post("editMessageReplyMarkup", **params)
+    end
+
+    # Every callback query must be answered, otherwise the client shows a spinner
+    # until it times out.
+    def answer_callback_query(callback_query_id:, text: nil, show_alert: false)
+      params = { callback_query_id: callback_query_id }
+      params[:text] = text if text
+      params[:show_alert] = true if show_alert
+      post("answerCallbackQuery", **params)
+    end
+
+    def send_document(chat_id:, filename:, data:, caption: nil, reply_to_message_id: nil, reply_markup: nil)
       fields = { "chat_id" => chat_id.to_s }
       fields["caption"] = caption if caption
       fields["reply_to_message_id"] = reply_to_message_id.to_s if reply_to_message_id
+      fields["reply_markup"] = Oj.dump(reply_markup) if reply_markup
 
       boundary = "----FormBoundary#{SecureRandom.hex(16)}"
       uri = URI("#{BASE_URL}/bot#{@token}/sendDocument")

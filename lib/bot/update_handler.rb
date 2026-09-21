@@ -1,8 +1,10 @@
 # frozen_string_literal: true
 
 require "logger"
+require_relative "callback_handler"
 require_relative "../jobs/transcribe_job"
 require_relative "../jobs/transcribe_audio_job"
+require_relative "../jobs/transcribe_media_job"
 require_relative "../jobs/improve_transcription_job"
 
 module Bot
@@ -12,16 +14,23 @@ module Bot
     # Used when a client uploads audio as a document without an audio mime type.
     AUDIO_EXTENSIONS = %w[mp3 m4a mp4a wav ogg oga opus flac aac wma amr aiff aif].freeze
 
+    # Only YouTube links are picked up unprompted; every other site goes through
+    # /summarize <url> so the bot does not react to every link in a group.
+    YOUTUBE_RE = %r{https?://(?:[\w-]+\.)*(?:youtube\.com/(?:watch\?|shorts/|live/|embed/)\S*|youtu\.be/[\w-]{5,})}i
+
     def initialize(payload)
       @payload = payload
       @message = payload["message"]
       @reaction = payload["message_reaction"]
+      @callback_query = payload["callback_query"]
       @logger = Logger.new($stdout)
       @logger.formatter = proc { |severity, time, _, msg| "#{time.utc.iso8601} #{severity} [handler] #{msg}\n" }
     end
 
     def call
-      if @reaction
+      if @callback_query
+        Bot::CallbackHandler.new(@callback_query).call
+      elsif @reaction
         handle_reaction
       elsif @message
         handle_message
@@ -59,6 +68,13 @@ module Bot
           handle_command
         else
           @logger.info("Command in non-admin/non-private chat, skipping")
+        end
+      elsif (url = media_link)
+        @logger.info("Media link detected: #{url}")
+        if allowed_voice_chat?
+          handle_media_link(url)
+        else
+          @logger.info("Media link in disallowed chat, skipping")
         end
       else
         @logger.info("Message did not match any handler")
@@ -121,6 +137,16 @@ module Bot
       entities.any? { |e| e["type"] == "bot_command" }
     end
 
+    # Matches a link written as plain text as well as one hidden behind a
+    # text_link entity, and picks the first YouTube URL out of a longer message.
+    def media_link
+      candidates = [@message["text"], @message["caption"]].compact
+      entities = (@message["entities"] || []) + (@message["caption_entities"] || [])
+      candidates += entities.filter_map { |e| e["url"] }
+
+      candidates.filter_map { |candidate| candidate[YOUTUBE_RE] }.first
+    end
+
     def handle_voice
       voice = @message["voice"]
       chat_id = @message["chat"]["id"]
@@ -140,6 +166,13 @@ module Bot
       Jobs::TranscribeAudioJob.perform_async(
         chat_id, msg_id, file_id, media["duration"], media["file_name"], media["file_size"]
       )
+    end
+
+    def handle_media_link(url)
+      chat_id = @message["chat"]["id"]
+      msg_id = @message["message_id"]
+      @logger.info("Enqueuing TranscribeMediaJob: chat=#{chat_id} msg=#{msg_id} url=#{url}")
+      Jobs::TranscribeMediaJob.perform_async(chat_id, msg_id, url, false)
     end
 
     def handle_command

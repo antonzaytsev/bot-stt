@@ -9,6 +9,7 @@ module Bot
   class WhisperClient
     TRANSCRIPTION_URL = "https://api.openai.com/v1/audio/transcriptions"
     CHAT_URL = "https://api.openai.com/v1/chat/completions"
+    DEFAULT_CHAT_MODEL = "gpt-4o-mini"
 
     def initialize(api_key: Config["OPENAI_API_KEY"])
       @api_key = api_key
@@ -62,27 +63,22 @@ module Bot
       )
     end
 
-    def summarize_podcast(transcript)
-      chat_completion(
-        "You are a podcast analyst. Given a full transcript of a podcast episode, produce a concise summary as bullet points.\n" \
-        "- Extract the key ideas, insights, and takeaways\n" \
-        "- Group related points under short topic headers if the episode covers multiple subjects\n" \
-        "- Keep the language matching the transcript (Russian if Russian, etc.)\n" \
-        "- Use English terms as-is when they appear in the original\n" \
-        "- Output ONLY the bullet points, nothing else",
-        transcript
-      )
+    # Raw chat access for callers that bring their own prompts (the summarizer),
+    # including the choice of model — summarizing well is worth a bigger one than
+    # reformatting a transcript is.
+    def chat(system_prompt, user_content, model: DEFAULT_CHAT_MODEL, timeout: 60)
+      chat_completion(system_prompt, user_content, model: model, timeout: timeout)
     end
 
     private
 
-    def chat_completion(system_prompt, user_content)
+    def chat_completion(system_prompt, user_content, model: DEFAULT_CHAT_MODEL, timeout: 60)
       uri = URI(CHAT_URL)
       request = Net::HTTP::Post.new(uri)
       request["Authorization"] = "Bearer #{@api_key}"
       request["Content-Type"] = "application/json"
       request.body = Oj.dump({
-        model: "gpt-4o-mini",
+        model: model,
         temperature: 0.3,
         messages: [
           { role: "system", content: system_prompt },
@@ -90,7 +86,7 @@ module Bot
         ]
       })
 
-      response = Net::HTTP.start(uri.hostname, uri.port, use_ssl: true, open_timeout: 30, read_timeout: 60) do |http|
+      response = Net::HTTP.start(uri.hostname, uri.port, use_ssl: true, open_timeout: 30, read_timeout: timeout) do |http|
         http.request(request)
       end
 

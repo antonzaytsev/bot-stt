@@ -1,6 +1,6 @@
 # bot-stt
 
-Telegram bot that transcribes speech to text using OpenAI Whisper. Add it to a private channel — it listens for voice messages and audio uploads, transcribes them, and replies with the text. Managed entirely via Telegram commands, no web UI.
+Telegram bot that transcribes speech to text using OpenAI Whisper. Add it to a private channel — it listens for voice messages, audio uploads and YouTube links, transcribes them, replies with the text and offers a summary. Managed entirely via Telegram commands, no web UI.
 
 Uses **long polling** — no public URL or webhook setup needed.
 
@@ -47,6 +47,24 @@ Besides voice messages, the bot transcribes audio sent as a Telegram **audio** m
 - Telegram bots can only download files up to 20 MB — larger uploads get a message saying so.
 - 👎 re-transcription is only available for voice messages, not for audio uploads.
 
+## YouTube Links and Other Media
+
+Post a YouTube link in an allowed chat and the bot transcribes its audio — no captions are used, the audio always goes through Whisper. `/summarize <url>` runs the same pipeline for any site yt-dlp supports (podcasts, direct mp3 links) and summarizes without being asked.
+
+- The transcript always comes back as a `.txt` file named after the media, captioned with title, duration and size.
+- Media longer than `MEDIA_CONFIRM_MINUTES` (default 30) is not processed until you tap **Proceed**; the bot shows the duration and the estimated Whisper cost first.
+- Live streams, upcoming premieres and playlists are refused.
+- Transcripts and summaries are cached for 90 days per media identity (`extractor:id`), refreshed on each use. The same video posted twice — by anyone, in any chat, under any URL shape — costs nothing the second time.
+
+## Summaries
+
+Any transcript long enough to be worth summarizing (1000+ characters, and every media transcript) comes with a **Summarize** button. Tapping it produces a TL;DR, topic sections and notable specifics, in the transcript's own language.
+
+- Under ~24k characters the transcript is summarized in a single pass with `SUMMARY_MODEL` (default `gpt-4o`).
+- Longer transcripts are mapped into dense per-window notes with `gpt-4o-mini` and then reduced into the final summary — one big prompt into a small model produces a shallow summary, which is what this avoids.
+- Summaries over 3500 characters arrive as `<title>-summary.txt`.
+- The button is removed once tapped, and a second tap never pays for the same summary twice.
+
 ## Bot Commands
 
 Send these to the bot in Telegram (admin only):
@@ -57,6 +75,7 @@ Send these to the bot in Telegram (admin only):
 | `/status` | Uptime, Redis, Sidekiq queue         |
 | `/stats`  | Processed/failed counts today        |
 | `/help`   | List commands                        |
+| `/summarize <url>` | Transcribe and summarize media at a URL |
 
 ## Tests
 

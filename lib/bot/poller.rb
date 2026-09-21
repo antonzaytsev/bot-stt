@@ -115,6 +115,9 @@ module Bot
       elsif update["message_reaction"]
         reaction = update["message_reaction"]
         @logger.info("  [reaction] chat_id=#{reaction.dig("chat", "id")} msg_id=#{reaction["message_id"]} new=#{reaction["new_reaction"]}")
+      elsif update["callback_query"]
+        query = update["callback_query"]
+        @logger.info("  [callback] chat_id=#{query.dig("message", "chat", "id")} from=#{query.dig("from", "id")} data=#{query["data"].inspect}")
       else
         @logger.info("  [unknown] keys=#{update.keys}")
       end

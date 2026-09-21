@@ -60,6 +60,29 @@ class TestTranscribeJob < Minitest::Test
     assert_equal 1, Bot::Stats.processed
   end
 
+  # The 👎 flow reads this metadata later: it has to know whether the anchor
+  # message is editable text and which token the Summarize button carries.
+  def test_metadata_records_how_the_transcript_was_delivered
+    Jobs::TranscribeJob.new.perform(-1001234, 42, "file_abc")
+
+    meta = Oj.load(Sidekiq.redis { |c| c.call("GET", "transcription_meta:-1001234:100") })
+    assert_equal false, meta["as_file"]
+    assert_nil meta["token"], "a short transcript gets no Summarize button"
+  end
+
+  def test_metadata_records_a_file_delivery_with_its_token
+    stub_request(:post, "https://api.openai.com/v1/chat/completions")
+      .to_return(status: 200, body: Oj.dump({ "choices" => [{ "message" => { "content" => "word " * 1000 } }] }))
+    stub_request(:post, "#{TELEGRAM_API}/sendDocument")
+      .to_return(status: 200, body: Oj.dump({ "ok" => true, "result" => { "message_id" => 101 } }))
+
+    Jobs::TranscribeJob.new.perform(-1001234, 42, "file_abc")
+
+    meta = Oj.load(Sidekiq.redis { |c| c.call("GET", "transcription_meta:-1001234:101") })
+    assert_equal true, meta["as_file"]
+    assert_equal meta["text"], Bot::TranscriptStore.fetch(meta["token"])["text"]
+  end
+
   def test_marks_message_as_transcribed_in_redis
     Jobs::TranscribeJob.new.perform(-1001234, 42, "file_abc")
 

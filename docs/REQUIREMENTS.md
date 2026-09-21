@@ -23,6 +23,9 @@ Before setup, the following must be obtained:
 - When any user in the channel sends a voice message, the bot picks it up and transcribes it.
 - The bot replies **to the original voice message** with the transcribed text.
 - Audio uploads are processed too — Telegram `audio` messages and audio files sent as `document`. Long uploads are split into chunks before transcription, and a transcript that does not fit into a Telegram message is returned as a `.txt` file.
+- Media behind a URL is processed too: a YouTube link posted in the channel, or any yt-dlp-supported URL passed to `/summarize`. The audio is always transcribed with Whisper — captions and subtitles are never used. Transcripts come back as a `.txt` file.
+- Media longer than `MEDIA_CONFIRM_MINUTES` requires a **Proceed** tap, shown with duration and estimated cost. Live streams, upcoming premieres and playlists are refused.
+- Every transcript long enough to be worth it carries a **Summarize** button; `/summarize <url>` summarizes without being asked.
 - Video notes and other media are ignored.
 - All users in the channel are treated equally — no access control or whitelisting.
 
@@ -36,6 +39,7 @@ The admin user can control and query the bot directly in Telegram via commands:
 | `/stats`     | Returns basic counters: messages processed today, failures today   |
 | `/ping`      | Simple liveness check — bot replies "pong"                         |
 | `/help`      | Lists available commands                                           |
+| `/summarize <url>` | Transcribes the media at the URL and summarizes it          |
 
 - Commands are only accepted from the designated admin user (matched by `ADMIN_CHAT_ID`). Messages from other users are ignored.
 - Command responses are sent as private messages to the admin, not in the channel.
@@ -53,7 +57,7 @@ The admin user can control and query the bot directly in Telegram via commands:
 ### Data Persistence
 
 - No transcriptions are stored in a database. The bot is stateless in terms of message history.
-- Redis is used only as a Sidekiq backend for job queue management.
+- Redis is used as the Sidekiq backend, and additionally holds two short-lived caches: per-delivery transcript records addressed by the token in a button's callback data (30 days), and transcripts plus summaries keyed by media identity (`extractor:id`, 90 days, refreshed on each use) so the same video is never transcribed twice.
 - Basic in-memory counters (processed/failed counts, boot time) are kept for `/status` and `/stats` responses. These reset on restart.
 
 ## Backend API
@@ -129,6 +133,8 @@ The following environment variables are required (defined in `.env`):
 | `REDIS_URL`           | Redis connection URL for Sidekiq                |
 | `WEBHOOK_SECRET`      | Secret token for Telegram webhook verification  |
 | `PORT`                | App port — used for both host and container mapping (e.g. `3000`) |
+| `MEDIA_CONFIRM_MINUTES` | Media longer than this asks for confirmation first (default `30`) |
+| `SUMMARY_MODEL`       | Model for the final summary (default `gpt-4o`)   |
 
 ## Bot Settings (Future)
 
@@ -149,7 +155,7 @@ Settings are managed via direct chat with the admin using `/settings` and `/set 
 
 - Transcription history or database storage.
 - Web frontend or admin UI.
-- Transcribing video notes or audio files.
+- Transcribing video notes.
 - Multi-channel support (bot serves one channel).
 - User-level access control or permissions.
 - Message editing or re-transcription.

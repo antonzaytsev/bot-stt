@@ -57,19 +57,31 @@ class TestWhisperClient < Minitest::Test
     assert_match(/Internal error/, error.message)
   end
 
-  def test_summarize_podcast_sends_system_prompt_and_returns_content
+  def test_chat_passes_prompts_and_model_through
     stub_request(:post, "https://api.openai.com/v1/chat/completions")
       .to_return(status: 200, body: Oj.dump({
         "choices" => [{ "message" => { "content" => "- Point one\n- Point two" } }]
       }))
 
-    result = Bot::WhisperClient.new.summarize_podcast("Full transcript text here...")
+    result = Bot::WhisperClient.new.chat("Summarize this.", "Full transcript text here...", model: "gpt-4o")
 
     assert_equal "- Point one\n- Point two", result
     assert_requested(:post, "https://api.openai.com/v1/chat/completions") { |req|
       body = Oj.load(req.body)
-      body["messages"][0]["content"].include?("bullet") &&
+      body["model"] == "gpt-4o" &&
+        body["messages"][0]["content"].include?("Summarize this") &&
         body["messages"][1]["content"].include?("Full transcript text here")
+    }
+  end
+
+  def test_chat_defaults_to_the_cheap_model
+    stub_request(:post, "https://api.openai.com/v1/chat/completions")
+      .to_return(status: 200, body: Oj.dump({ "choices" => [{ "message" => { "content" => "ok" } }] }))
+
+    Bot::WhisperClient.new.chat("system", "user")
+
+    assert_requested(:post, "https://api.openai.com/v1/chat/completions") { |req|
+      Oj.load(req.body)["model"] == "gpt-4o-mini"
     }
   end
 end

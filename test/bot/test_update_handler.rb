@@ -213,7 +213,110 @@ class TestUpdateHandler < Minitest::Test
     assert_requested(:post, "#{TELEGRAM_API}/sendMessage")
   end
 
+  def test_enqueues_media_job_for_every_youtube_link_shape
+    urls = [
+      "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+      "https://youtube.com/watch?v=dQw4w9WgXcQ&t=30s",
+      "https://m.youtube.com/watch?v=dQw4w9WgXcQ",
+      "https://music.youtube.com/watch?v=dQw4w9WgXcQ",
+      "https://youtu.be/dQw4w9WgXcQ",
+      "https://www.youtube.com/shorts/dQw4w9WgXcQ",
+      "https://www.youtube.com/live/dQw4w9WgXcQ"
+    ]
+
+    urls.each do |url|
+      Sidekiq::Worker.clear_all
+      Bot::UpdateHandler.new(text_payload(url)).call
+
+      assert_equal 1, Jobs::TranscribeMediaJob.jobs.size, "expected a job for #{url}"
+      assert_equal [ADMIN_ID, 42, url, false], Jobs::TranscribeMediaJob.jobs.first["args"]
+    end
+  end
+
+  def test_picks_the_link_out_of_surrounding_prose
+    Bot::UpdateHandler.new(text_payload("look at this https://youtu.be/dQw4w9WgXcQ it is good")).call
+
+    assert_equal 1, Jobs::TranscribeMediaJob.jobs.size
+    assert_equal "https://youtu.be/dQw4w9WgXcQ", Jobs::TranscribeMediaJob.jobs.first["args"][2]
+  end
+
+  def test_finds_a_link_hidden_behind_a_text_link_entity
+    payload = text_payload("watch this")
+    payload["message"]["entities"] = [
+      { "type" => "text_link", "offset" => 0, "length" => 10, "url" => "https://youtu.be/dQw4w9WgXcQ" }
+    ]
+
+    Bot::UpdateHandler.new(payload).call
+
+    assert_equal 1, Jobs::TranscribeMediaJob.jobs.size
+  end
+
+  def test_ignores_non_youtube_links
+    Bot::UpdateHandler.new(text_payload("https://vimeo.com/12345")).call
+
+    assert_equal 0, Jobs::TranscribeMediaJob.jobs.size
+  end
+
+  def test_summarize_command_with_a_youtube_url_is_still_a_command
+    payload = text_payload("/summarize https://youtu.be/dQw4w9WgXcQ")
+    payload["message"]["entities"] = [{ "type" => "bot_command", "offset" => 0, "length" => 10 }]
+
+    Bot::UpdateHandler.new(payload).call
+
+    # CommandHandler enqueues it with auto_summarize on, rather than the bare-link path.
+    assert_equal 1, Jobs::TranscribeMediaJob.jobs.size
+    assert_equal true, Jobs::TranscribeMediaJob.jobs.first["args"][3]
+  end
+
+  def test_ignores_a_youtube_link_in_a_non_allowed_group
+    payload = text_payload("https://youtu.be/dQw4w9WgXcQ", chat_id: GROUP_ID, chat_type: "supergroup", from_id: 999)
+
+    Bot::UpdateHandler.new(payload).call
+
+    assert_equal 0, Jobs::TranscribeMediaJob.jobs.size
+  end
+
+  def test_enqueues_media_job_in_an_allowed_group
+    ENV["ALLOWED_CHAT_ID"] = GROUP_ID.to_s
+    payload = text_payload("https://youtu.be/dQw4w9WgXcQ", chat_id: GROUP_ID, chat_type: "supergroup", from_id: 999)
+
+    Bot::UpdateHandler.new(payload).call
+
+    assert_equal 1, Jobs::TranscribeMediaJob.jobs.size
+  end
+
+  def test_routes_callback_queries_to_the_callback_handler
+    stub_request(:post, "#{TELEGRAM_API}/answerCallbackQuery")
+      .to_return(status: 200, body: Oj.dump({ "ok" => true, "result" => true }))
+    Sidekiq.redis { |c| c.call("FLUSHDB") }
+    Bot::TranscriptStore.save(token: "tok", chat_id: ADMIN_ID, text: "Transcript.", source: "voice")
+
+    payload = {
+      "update_id" => 1,
+      "callback_query" => {
+        "id" => "cb-1", "data" => "s|tok", "from" => { "id" => ADMIN_ID },
+        "message" => { "message_id" => 300, "chat" => { "id" => ADMIN_ID, "type" => "private" } }
+      }
+    }
+
+    Bot::UpdateHandler.new(payload).call
+
+    assert_equal 1, Jobs::SummarizeJob.jobs.size
+  end
+
   private
+
+  def text_payload(text, chat_id: ADMIN_ID, chat_type: "private", from_id: ADMIN_ID)
+    {
+      "update_id" => 1,
+      "message" => {
+        "message_id" => 42,
+        "chat" => { "id" => chat_id, "type" => chat_type },
+        "from" => { "id" => from_id },
+        "text" => text
+      }
+    }
+  end
 
   def voice_payload(chat_id:, chat_type:, from_id:)
     {
