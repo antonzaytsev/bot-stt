@@ -41,6 +41,21 @@ class TestWhisperClient < Minitest::Test
     }
   end
 
+  # Binary audio and a Cyrillic carry-over prompt land in the same body; Ruby
+  # refuses to join them unless every part is forced to binary first.
+  def test_transcribe_mixes_binary_audio_with_a_non_ascii_prompt
+    stub_request(:post, WHISPER_URL)
+      .to_return(status: 200, body: Oj.dump({ "text" => "ok" }))
+
+    audio = "OggS\x00\x02\xFF\xFE".b
+    @client.transcribe(audio, filename: "chunk_000.ogg", prompt: "Собираем агентов без навыков")
+
+    assert_requested(:post, WHISPER_URL) { |req|
+      body = req.body.dup.force_encoding("UTF-8")
+      body.include?("Собираем агентов без навыков") && req.body.b.include?("OggS\x00\x02\xFF\xFE".b)
+    }
+  end
+
   def test_transcribe_raises_on_api_error
     stub_request(:post, WHISPER_URL)
       .to_return(status: 401, body: Oj.dump({ "error" => { "message" => "Invalid API key" } }))

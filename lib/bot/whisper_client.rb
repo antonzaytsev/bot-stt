@@ -96,15 +96,17 @@ module Bot
       parsed.dig("choices", 0, "message", "content")&.strip
     end
 
+    # Every part is forced to binary before being joined: the audio is
+    # ASCII-8BIT and the prompt is UTF-8, and Ruby refuses to concatenate the
+    # two as soon as either carries non-ASCII bytes.
     def build_multipart_body(boundary, audio_data, filename, prompt: nil)
-      parts = []
-      parts << "--#{boundary}\r\nContent-Disposition: form-data; name=\"file\"; filename=\"#{filename}\"\r\nContent-Type: audio/ogg\r\n\r\n#{audio_data}\r\n"
-      parts << "--#{boundary}\r\nContent-Disposition: form-data; name=\"model\"\r\n\r\ngpt-4o-transcribe\r\n"
-      if prompt
-        parts << "--#{boundary}\r\nContent-Disposition: form-data; name=\"prompt\"\r\n\r\n#{prompt}\r\n"
-      end
-      parts << "--#{boundary}--\r\n"
-      parts.join
+      body = +"".b
+      body << "--#{boundary}\r\nContent-Disposition: form-data; name=\"file\"; filename=\"#{filename}\"\r\nContent-Type: audio/ogg\r\n\r\n".b
+      body << audio_data.b
+      body << "\r\n--#{boundary}\r\nContent-Disposition: form-data; name=\"model\"\r\n\r\ngpt-4o-transcribe\r\n".b
+      body << "--#{boundary}\r\nContent-Disposition: form-data; name=\"prompt\"\r\n\r\n#{prompt}\r\n".b if prompt
+      body << "--#{boundary}--\r\n".b
+      body
     end
   end
 end
