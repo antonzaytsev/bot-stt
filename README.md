@@ -62,8 +62,18 @@ Any transcript long enough to be worth summarizing (1000+ characters, and every 
 
 - Under ~24k characters the transcript is summarized in a single pass with `SUMMARY_MODEL` (default `gpt-4o`).
 - Longer transcripts are mapped into dense per-window notes with `gpt-4o-mini` and then reduced into the final summary — one big prompt into a small model produces a shallow summary, which is what this avoids.
-- Summaries over 3500 characters arrive as `<title>-summary.txt`.
+- Summaries over ~3800 characters arrive as `<title>-summary.txt`.
 - The button is removed once tapped, and a second tap never pays for the same summary twice.
+- Markdown from the model is converted to Telegram HTML before sending; if Telegram still rejects the entities, the same summary goes out unformatted rather than not at all.
+
+## Costs
+
+Every transcript and summary says what it cost at OpenAI list prices — audio minutes at $0.006/min plus the actual token usage the API reports for the formatting and summary passes.
+
+- Media transcripts put the figure in the file caption: `Title · 12m · 10000 characters · $0.14`.
+- A summary ends with `Cost: $0.18 (transcript $0.14 + summary $0.04)`, so the total for that video is visible in one line.
+- Cache hits say so and cost nothing.
+- Audio uploads show a cost only when Telegram reports a duration; for arbitrary documents it does not, and a figure that leaves out the audio minutes would be misleading.
 
 ## Bot Commands
 

@@ -25,7 +25,8 @@ Before setup, the following must be obtained:
 - Audio uploads are processed too — Telegram `audio` messages and audio files sent as `document`. Long uploads are split into chunks before transcription, and a transcript that does not fit into a Telegram message is returned as a `.txt` file.
 - Media behind a URL is processed too: a YouTube link posted in the channel, or any yt-dlp-supported URL passed to `/summarize`. The audio is always transcribed with Whisper — captions and subtitles are never used. Transcripts come back as a `.txt` file.
 - Media longer than `MEDIA_CONFIRM_MINUTES` requires a **Proceed** tap, shown with duration and estimated cost. Live streams, upcoming premieres and playlists are refused.
-- Every transcript long enough to be worth it carries a **Summarize** button; `/summarize <url>` summarizes without being asked.
+- Every transcript long enough to be worth it carries a **Summarize** button; `/summarize <url>` summarizes without being asked. Summaries are rendered as Telegram HTML, falling back to unformatted text if Telegram rejects the entities.
+- Transcripts and summaries report what they cost: audio minutes plus the token usage the OpenAI API reports for the formatting and summary passes.
 - Video notes and other media are ignored.
 - All users in the channel are treated equally — no access control or whitelisting.
 

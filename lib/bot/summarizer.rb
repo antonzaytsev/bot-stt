@@ -16,17 +16,22 @@ module Bot
       You are summarizing a transcript of spoken material (a talk, video, podcast or voice note).
 
       Produce, in this order:
-      1. "TL;DR" — two or three sentences covering what this is and what it concludes.
-      2. Topic sections with a short header each, and bullets under them carrying the actual
-         substance: arguments, reasoning, conclusions — not a table of contents.
-      3. "Notable" — concrete numbers, names, claims, recommendations and references worth keeping.
-         Omit this section if the material has none.
+      - A section headed "TL;DR" — two or three sentences covering what this is and what it concludes.
+      - Topic sections with a short header each, and bullets under them carrying the actual
+        substance: arguments, reasoning, conclusions — not a table of contents.
+      - A final section headed "Notable" — concrete numbers, names, claims, recommendations and
+        references worth keeping. Omit this section if the material has none.
 
       Rules:
       - Write in the language of the transcript. Keep English technical terms as they appear.
       - Be specific. "Discusses pricing" is worthless; "argues usage pricing beats seats above 50 users" is not.
       - Never invent anything that is not in the transcript, and do not comment on the transcript itself.
       - Output only the summary, no preamble.
+
+      Formatting (the output is rendered in a chat client, not a document):
+      - Every section header is bold on its own line, written as **Header**. Never number the sections.
+      - Every other line is a bullet starting with "- ", or a plain sentence.
+      - No markdown headings (#), no tables, no code fences, no horizontal rules.
     PROMPT
 
     NOTES_SYSTEM = <<~PROMPT

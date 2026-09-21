@@ -8,6 +8,7 @@ require_relative "../bot/whisper_client"
 require_relative "../bot/audio_downloader"
 require_relative "../bot/chunked_transcriber"
 require_relative "../bot/transcript_delivery"
+require_relative "../bot/costs"
 require_relative "../bot/stats"
 require_relative "../bot/settings"
 
@@ -78,7 +79,7 @@ module Jobs
         final_text = transcriber.call(chunks)[:text]
         Sidekiq.logger.info("[audio] Final text (#{final_text.length} chars): #{final_text[0..100]}...")
 
-        deliver(final_text, file_name)
+        deliver(final_text, file_name, duration)
       ensure
         FileUtils.remove_entry(tmp_dir) if File.directory?(tmp_dir)
       end
@@ -113,10 +114,20 @@ module Jobs
       input_path
     end
 
-    def deliver(text, file_name)
+    # Telegram reports a duration for `audio` messages but not for arbitrary
+    # documents; without it the audio minutes cannot be priced, so the caption
+    # says nothing rather than something too low.
+    def deliver(text, file_name, duration)
+      cost = duration ? Bot::Costs.audio(duration) + @whisper.chat_spend : nil
+      caption = "Transcript (#{text.length} characters)"
+      caption = "#{caption} · #{Bot::Costs.format(cost)}" if cost
+
       Bot::TranscriptDelivery.new(
         telegram: @telegram, chat_id: @chat_id, reply_to_message_id: @message_id
-      ).call(text: text, source: "audio", status_msg_id: @status_msg_id, base_name: file_name)
+      ).call(
+        text: text, source: "audio", status_msg_id: @status_msg_id,
+        base_name: file_name, caption: caption, cost: cost
+      )
     end
 
     def extension_for(file_name, telegram_path)

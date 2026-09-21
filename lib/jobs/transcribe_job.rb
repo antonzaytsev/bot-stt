@@ -5,6 +5,7 @@ require "oj"
 require_relative "../bot/telegram_client"
 require_relative "../bot/whisper_client"
 require_relative "../bot/transcript_delivery"
+require_relative "../bot/costs"
 require_relative "../bot/stats"
 require_relative "../bot/settings"
 
@@ -60,7 +61,10 @@ module Jobs
       Sidekiq.logger.info("[job] Sending reply to chat=#{chat_id} reply_to=#{message_id}")
       delivered = Bot::TranscriptDelivery.new(
         telegram: telegram, chat_id: chat_id, reply_to_message_id: message_id
-      ).call(text: final_text, source: "voice", base_name: "voice")
+      ).call(
+        text: final_text, source: "voice", base_name: "voice",
+        cost: duration ? Bot::Costs.audio(duration) + whisper.chat_spend : nil
+      )
       bot_msg_id = delivered[:anchor_msg_id]
       Sidekiq.logger.info("[job] Bot reply sent as msg=#{bot_msg_id}")
 

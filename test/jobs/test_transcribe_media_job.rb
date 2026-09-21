@@ -75,6 +75,40 @@ class TestTranscribeMediaJob < Minitest::Test
     }
   end
 
+  def test_caption_carries_what_the_run_cost
+    perform(duration: 600)
+
+    assert_requested(:post, "#{TELEGRAM_API}/sendDocument") { |req|
+      utf8(req.body).include?("$0.06")
+    }
+  end
+
+  # Whisper minutes are not the whole bill: every chunk is reformatted by a chat
+  # model, and those tokens are on the invoice too.
+  def test_cost_includes_the_formatting_passes
+    stub_request(:post, "https://api.openai.com/v1/chat/completions")
+      .to_return(status: 200, body: Oj.dump({
+        "choices" => [{ "message" => { "content" => "Formatted text." } }],
+        "usage" => { "prompt_tokens" => 1_000_000, "completion_tokens" => 0 }
+      }))
+
+    perform(duration: 600)
+
+    assert_requested(:post, "#{TELEGRAM_API}/sendDocument") { |req|
+      utf8(req.body).include?("$0.21") # $0.06 of audio + $0.15 of gpt-4o-mini input
+    }
+  end
+
+  def test_cache_hit_says_it_cost_nothing
+    Bot::MediaCache.save_transcript("youtube:abc123", text: "Cached transcript.", title: "A talk", duration: 600)
+
+    perform
+
+    assert_requested(:post, "#{TELEGRAM_API}/sendDocument") { |req|
+      utf8(req.body).include?("no cost")
+    }
+  end
+
   def test_transcript_is_cached_under_the_media_identity
     perform
 

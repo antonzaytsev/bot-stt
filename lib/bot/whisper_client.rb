@@ -4,6 +4,7 @@ require "net/http"
 require "uri"
 require "oj"
 require "tempfile"
+require_relative "costs"
 
 module Bot
   class WhisperClient
@@ -11,8 +12,13 @@ module Bot
     CHAT_URL = "https://api.openai.com/v1/chat/completions"
     DEFAULT_CHAT_MODEL = "gpt-4o-mini"
 
+    # What this client has spent on chat calls, in USD. Audio minutes are billed
+    # separately and only the caller knows the duration.
+    attr_reader :chat_spend
+
     def initialize(api_key: Config["OPENAI_API_KEY"])
       @api_key = api_key
+      @chat_spend = 0.0
     end
 
     def transcribe(audio_data, filename: "voice.ogg", prompt: nil)
@@ -93,7 +99,18 @@ module Bot
       parsed = Oj.load(response.body)
       raise "OpenAI API error: #{parsed.dig("error", "message") || response.code}" unless response.is_a?(Net::HTTPSuccess)
 
+      record_spend(model, parsed["usage"])
       parsed.dig("choices", 0, "message", "content")&.strip
+    end
+
+    def record_spend(model, usage)
+      return unless usage
+
+      @chat_spend += Costs.chat(
+        model: model,
+        input_tokens: usage["prompt_tokens"],
+        output_tokens: usage["completion_tokens"]
+      )
     end
 
     # Every part is forced to binary before being joined: the audio is

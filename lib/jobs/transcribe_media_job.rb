@@ -9,6 +9,7 @@ require_relative "../bot/whisper_client"
 require_relative "../bot/audio_downloader"
 require_relative "../bot/media_probe"
 require_relative "../bot/media_cache"
+require_relative "../bot/costs"
 require_relative "../bot/chunked_transcriber"
 require_relative "../bot/transcript_delivery"
 require_relative "../bot/stats"
@@ -124,15 +125,16 @@ module Jobs
     # Media transcripts always go out as a file — they are long, and a file is
     # what the user asked for.
     def deliver(text, media, key, cached: false)
+      cost = cached ? 0.0 : Bot::Costs.audio(media.duration) + @whisper.chat_spend
       caption = [media.title, human_duration(media.duration), "#{text.length} characters"].compact.join(" · ")
-      caption = "#{caption} (already transcribed)" if cached
+      caption = cached ? "#{caption} (already transcribed, no cost)" : "#{caption} · #{Bot::Costs.format(cost)}"
 
       result = Bot::TranscriptDelivery.new(
         telegram: @telegram, chat_id: @chat_id, reply_to_message_id: @message_id
       ).call(
         text: text, source: "media", status_msg_id: @status_msg_id, force_file: true,
         base_name: media.title || "transcript", caption: caption,
-        title: media.title, media_key: key, button: !@auto_summarize
+        title: media.title, media_key: key, button: !@auto_summarize, cost: cost
       )
 
       update_status("Transcript ready.")

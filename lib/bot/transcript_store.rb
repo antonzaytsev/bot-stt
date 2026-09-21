@@ -17,7 +17,8 @@ module Bot
         SecureRandom.hex(6)
       end
 
-      def save(token:, chat_id:, text:, source:, anchor_msg_id: nil, title: nil, media_key: nil, button: false)
+      def save(token:, chat_id:, text:, source:, anchor_msg_id: nil, title: nil, media_key: nil,
+               button: false, cost: nil)
         record = {
           "chat_id" => chat_id,
           "anchor_msg_id" => anchor_msg_id,
@@ -25,7 +26,8 @@ module Bot
           "source" => source,
           "title" => title,
           "media_key" => media_key,
-          "button" => button
+          "button" => button,
+          "cost" => cost
         }
         Sidekiq.redis { |c| c.call("SET", PREFIX + token, Oj.dump(record), "EX", TTL) }
         record

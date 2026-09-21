@@ -25,7 +25,7 @@ module Bot
     # Returns { token:, anchor_msg_id: } — the anchor is the message carrying the
     # transcript, which is also where the summary gets attached later.
     def call(text:, source:, status_msg_id: nil, force_file: false, base_name: nil,
-             caption: nil, title: nil, media_key: nil, button: true)
+             caption: nil, title: nil, media_key: nil, button: true, cost: nil)
       token = TranscriptStore.new_token
       button &&= force_file || text.length >= MIN_SUMMARY_CHARS
       markup = button ? summary_markup(token) : nil
@@ -40,7 +40,7 @@ module Bot
 
       TranscriptStore.save(
         token: token, chat_id: @chat_id, anchor_msg_id: anchor_msg_id, text: text,
-        source: source, title: title, media_key: media_key, button: button
+        source: source, title: title, media_key: media_key, button: button, cost: cost
       )
 
       { token: token, anchor_msg_id: anchor_msg_id, as_file: as_file, button: button }
